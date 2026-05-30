@@ -16,6 +16,7 @@
 > - 大量 **`isTrusted`** 原生动作，**无自动化检测点**
 > - 支持多种 JS 事件构造附加 **`ruyi: true`**，让 `Event` / `InputEvent` / `MouseEvent` / `KeyboardEvent` 等事件的 **`isTrusted`** 更贴近真实交互
 > - 支持 **ADS** 等指纹浏览器**直接自动化接管**
+> - 自带 **HTTP / SOCKS5 密码代理**支持，支持**一个 tab 一个密码代理**
 > - 基于 **Firefox + WebDriver BiDi**
 > - 更适合**高风控场景**
 

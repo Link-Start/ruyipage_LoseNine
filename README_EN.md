@@ -16,6 +16,7 @@
 > - A large amount of native **`isTrusted`** actions, with **no automation detection surface**
 > - Supports adding **`ruyi: true`** to many JS event constructors so the **`isTrusted`** behavior of `Event`, `InputEvent`, `MouseEvent`, `KeyboardEvent`, and more can stay closer to real interaction
 > - Supports **direct automated takeover** of fingerprint browsers such as **ADS**
+> - Built-in **HTTP / SOCKS5 password proxy** support, including **one password proxy per tab**
 > - Built on **Firefox + WebDriver BiDi**
 > - Better suited for **high-risk scenarios**
 
