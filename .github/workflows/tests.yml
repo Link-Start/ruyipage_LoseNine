@@ -30,6 +30,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-test.txt
 
+      - name: Run fast tests
+        run: python -m pytest -m fast -q
+
       - name: Install Firefox 151
         shell: powershell
         run: |
@@ -49,13 +52,16 @@ jobs:
           "RUYIPAGE_TEST_FIREFOX_PATH=C:\Program Files\Mozilla Firefox\firefox.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Run smoke tests
-        run: python -m pytest tests/smoke -q
+        run: python -m pytest tests/smoke -m browser -q
 
       - name: Run feature tests
-        run: python -m pytest tests/features -q
+        run: python -m pytest tests/features -m browser -q
+
+      - name: Run async browser smoke tests
+        run: python -m pytest tests/async_smoke/test_async_smoke.py -m browser -q
 
       - name: Run integration tests
-        run: python -m pytest tests/integration -q
+        run: python -m pytest tests/integration -m browser -q
 
       - name: Run release gate
-        run: python -m pytest tests/release -q
+        run: python -m pytest tests/release -m browser -q

@@ -41,7 +41,16 @@ python -m pip install -r requirements.txt
 python -m pip install -r requirements-test.txt
 ```
 
-### 2. 准备浏览器
+### 2. 先运行快速测试
+
+快速测试不启动真实 Firefox/BiDi，会覆盖异步 API 生成漂移、指纹构建、
+runtime 安装器、配置生成和纯单元逻辑。日常改动建议先跑这一组。
+
+```bash
+python -m pytest -m fast -q
+```
+
+### 3. 准备浏览器
 
 默认情况下，测试会直接使用系统默认路径下的 Firefox。
 
@@ -54,34 +63,38 @@ set RUYIPAGE_TEST_FIREFOX_PATH=C:\Program Files\Mozilla Firefox\firefox.exe
 如果你本地使用的是配套的 `firefox-fingerprintBrowser` 151 版本 release，也可以把
 这个环境变量指向它的 `firefox.exe`，这样整套 `tests/` 会直接跑在指纹浏览器上。
 
-### 3. 运行全部基线
+### 4. 运行全部基线
 
 ```bash
 python -m pytest tests
 ```
 
-### 4. 按层运行
+### 5. 按层运行
 
 ```bash
-python -m pytest tests/smoke -q
-python -m pytest tests/features -q
-python -m pytest tests/integration -q
-python -m pytest tests/release -q
+python -m pytest tests/smoke -m browser -q
+python -m pytest tests/features -m browser -q
+python -m pytest tests/async_smoke/test_async_smoke.py -m browser -q
+python -m pytest tests/integration -m browser -q
+python -m pytest tests/release -m browser -q
 ```
 
-### 5. 按 marker 运行
+### 6. 按 marker 运行
 
 ```bash
+python -m pytest tests -m fast
+python -m pytest tests -m browser
 python -m pytest tests -m smoke
 python -m pytest tests -m feature
 python -m pytest tests -m integration
 python -m pytest tests -m release
 ```
 
-### 6. 常见使用顺序
+### 7. 常见使用顺序
 
-- 日常改动后先跑：`tests/smoke`
-- 功能改动后再跑：`tests/features`
+- 日常改动后先跑：`python -m pytest -m fast -q`
+- 需要真实浏览器验证时再跑：`tests/smoke -m browser`
+- 功能改动后再跑：`tests/features -m browser`
 - 涉及多模块联动时补跑：`tests/integration`
 - 发版前至少跑：`tests/release`
 
@@ -94,6 +107,7 @@ python -m pytest tests
 常用筛选：
 
 ```bash
+python -m pytest -m fast -q
 python -m pytest tests -m smoke
 python -m pytest tests -m feature
 python -m pytest tests -m integration

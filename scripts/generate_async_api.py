@@ -95,8 +95,8 @@ LIST_ELEMENT_RETURNING = {
 }
 
 # 返回 Tab 的方法
-TAB_RETURNING = {"new_tab", "get_tab", "latest_tab"}
-TAB_LIST_RETURNING = {"get_tabs"}
+TAB_RETURNING = {"new_tab", "new_container_tab", "get_tab", "latest_tab"}
+TAB_LIST_RETURNING = {"new_container_tabs", "get_tabs"}
 
 # 返回 Frame 的方法
 FRAME_RETURNING = {"get_frame"}
@@ -208,7 +208,7 @@ def generate_method(name, method, parent_class_name):
                 name, call_args
             )
         )
-        lines.append("        return AsyncFirefoxTab(_r)")
+        lines.append("        return AsyncFirefoxTab(_r) if _r else _r")
     elif name in TAB_LIST_RETURNING:
         lines.append("    async def {}({}):".format(name, params_str))
         lines.append(
@@ -237,10 +237,11 @@ def generate_method(name, method, parent_class_name):
         # 普通方法
         lines.append("    async def {}({}):".format(name, params_str))
         lines.append(
-            "        return await greenlet_spawn(self._sync.{}, {})".format(
+            "        _r = await greenlet_spawn(self._sync.{}, {})".format(
                 name, call_args
             )
         )
+        lines.append("        return _wrap_async_result(_r, self)")
 
     return "\n".join(lines)
 
@@ -249,7 +250,8 @@ def generate_property_getter(name):
     """为 I/O 属性生成 async get_xxx() 方法"""
     return (
         "    async def get_{name}(self):\n"
-        "        return await greenlet_spawn(lambda: self._sync.{name})"
+        "        _r = await greenlet_spawn(lambda: self._sync.{name})\n"
+        "        return _wrap_async_result(_r, self)"
     ).format(name=name)
 
 
@@ -268,7 +270,7 @@ def generate_unit_property(name):
         "    @property\n"
         "    def {name}(self):\n"
         '        if "{name}" not in self._unit_cache:\n'
-        "            self._unit_cache[\"{name}\"] = AsyncUnitProxy(self._sync.{name})\n"
+        "            self._unit_cache[\"{name}\"] = AsyncUnitProxy(self._sync.{name}, owner=self)\n"
         '        return self._unit_cache["{name}"]'
     ).format(name=name)
 
@@ -375,8 +377,9 @@ class AsyncUnitProxy:
     将所有公共方法自动包装为异步版本。
     """
 
-    def __init__(self, sync_unit):
+    def __init__(self, sync_unit, owner=None):
         self._sync = sync_unit
+        self._owner = owner
 
     def __getattr__(self, name):
         if name.startswith("_"):
@@ -386,7 +389,8 @@ class AsyncUnitProxy:
 
         if callable(attr):
             async def _async_method(*args, **kwargs):
-                return await greenlet_spawn(attr, *args, **kwargs)
+                _r = await greenlet_spawn(attr, *args, **kwargs)
+                return _wrap_async_result(_r, owner=self._owner, unit_proxy=self)
             _async_method.__name__ = name
             _async_method.__qualname__ = "AsyncUnitProxy.{}".format(name)
             return _async_method
@@ -396,7 +400,8 @@ class AsyncUnitProxy:
 
     async def __call__(self, *args, **kwargs):
         """支持可调用的 unit（如 PageWaiter.__call__、ElementWaiter.__call__）"""
-        return await greenlet_spawn(self._sync, *args, **kwargs)
+        _r = await greenlet_spawn(self._sync, *args, **kwargs)
+        return _wrap_async_result(_r, owner=self._owner, unit_proxy=self)
 
     def __repr__(self):
         return "<Async{}>".format(repr(self._sync))
@@ -423,6 +428,34 @@ class AsyncNoneElement:
 
     async def __getattr__(self, name):
         return None
+'''
+
+
+def generate_wrap_async_result():
+    """Generate helper for converting sync API return values back to async wrappers."""
+    return '''
+def _wrap_async_result(value, owner=None, unit_proxy=None):
+    """Wrap sync ruyiPage objects returned through async proxies."""
+    if value is None:
+        return None
+    if unit_proxy is not None and value is getattr(unit_proxy, "_sync", None):
+        return unit_proxy
+    if owner is not None:
+        sync_owner = getattr(owner, "_sync", None)
+        if value is sync_owner:
+            return owner
+    value_type = getattr(value, "_type", None)
+    if value_type == "FirefoxPage":
+        return AsyncFirefoxPage(value)
+    if value_type == "FirefoxTab":
+        return AsyncFirefoxTab(value)
+    if value_type == "FirefoxFrame":
+        return AsyncFirefoxFrame(value)
+    if value_type == "FirefoxElement":
+        return AsyncFirefoxElement(value)
+    if value_type == "NoneElement":
+        return AsyncNoneElement(value)
+    return value
 '''
 
 
@@ -459,6 +492,8 @@ from ._overrides import AsyncFirefoxBaseMixin, AsyncFirefoxElementMixin
 
     # AsyncNoneElement
     parts.append(generate_none_element())
+    parts.append("\n")
+    parts.append(generate_wrap_async_result())
     parts.append("\n")
 
     # AsyncFirefoxBase（FirefoxBase 代理）

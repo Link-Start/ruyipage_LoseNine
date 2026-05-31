@@ -14,8 +14,46 @@ from tests.support.test_server import TestServer
 
 
 TESTS_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = TESTS_DIR.parent
 FIXTURE_PAGES_DIR = TESTS_DIR / "fixtures" / "pages"
 ENV_FIREFOX_PATH = "RUYIPAGE_TEST_FIREFOX_PATH"
+
+BROWSER_TEST_DIRS = {
+    "tests/smoke",
+    "tests/integration",
+    "tests/release",
+}
+
+BROWSER_TEST_FILES = {
+    "tests/async_smoke/test_async_smoke.py",
+    "tests/features/test_actions.py",
+    "tests/features/test_attach_mode.py",
+    "tests/features/test_cookies.py",
+    "tests/features/test_data_collector.py",
+    "tests/features/test_human_move_bounds.py",
+    "tests/features/test_intercept_mock_fail.py",
+    "tests/features/test_interceptor_requests.py",
+    "tests/features/test_interceptor_responses.py",
+    "tests/features/test_interceptor_slow_responses.py",
+    "tests/features/test_listener_response_body.py",
+    "tests/features/test_private_mode.py",
+    "tests/features/test_scroll_then_click_visual.py",
+    "tests/features/test_storage.py",
+}
+
+BROWSER_FIXTURES = {
+    "page",
+    "launched_page",
+    "async_page",
+}
+
+
+def _is_browser_test(rel_path, fixture_names):
+    return (
+        any(rel_path.startswith(prefix + "/") for prefix in BROWSER_TEST_DIRS)
+        or rel_path in BROWSER_TEST_FILES
+        or bool(BROWSER_FIXTURES.intersection(fixture_names))
+    )
 
 
 def pytest_configure(config):
@@ -24,6 +62,23 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration: 多模块串联工作流回归")
     config.addinivalue_line("markers", "release: 发版前最小通过集合")
     config.addinivalue_line("markers", "local_server: 依赖本地测试 server")
+    config.addinivalue_line("markers", "fast: 不需要真实 Firefox/BiDi 会话的快速测试")
+    config.addinivalue_line("markers", "browser: 需要真实 Firefox/BiDi 会话的测试")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Automatically classify tests into fast or browser buckets."""
+    for item in items:
+        rel_path = Path(str(item.fspath)).resolve().relative_to(PROJECT_ROOT).as_posix()
+        markers = {mark.name for mark in item.iter_markers()}
+        if "fast" in markers or "browser" in markers:
+            continue
+
+        is_browser = _is_browser_test(
+            rel_path,
+            getattr(item, "fixturenames", ()),
+        )
+        item.add_marker(pytest.mark.browser if is_browser else pytest.mark.fast)
 
 
 @pytest.fixture

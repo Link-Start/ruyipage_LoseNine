@@ -317,3 +317,270 @@ class TestInterruptibleSleep:
         assert "bg_start" in events
         assert "bg_end" in events
         assert events.index("bg_start") < events.index("sync_end")
+
+
+class TestAsyncTabWrapping:
+    """Verify tab-returning page APIs expose async tab wrappers."""
+
+    class _SyncPage:
+        def __init__(self):
+            self.tab = object()
+            self.tabs = [object(), object()]
+            self.calls = []
+
+        def new_container_tab(self, url=None, background=False):
+            self.calls.append(("new_container_tab", url, background))
+            return self.tab
+
+        def new_container_tabs(self, count, url=None, background=False):
+            self.calls.append(("new_container_tabs", count, url, background))
+            return self.tabs[:count]
+
+    @pytest.mark.asyncio
+    async def test_new_container_tab_returns_async_tab(self):
+        from ruyipage._async._generated import AsyncFirefoxPage, AsyncFirefoxTab
+
+        sync_page = self._SyncPage()
+        page = AsyncFirefoxPage(sync_page)
+
+        tab = await page.new_container_tab("https://example.com", background=True)
+
+        assert isinstance(tab, AsyncFirefoxTab)
+        assert tab._sync is sync_page.tab
+        assert sync_page.calls == [
+            ("new_container_tab", "https://example.com", True)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_new_container_tabs_returns_async_tabs(self):
+        from ruyipage._async._generated import AsyncFirefoxPage, AsyncFirefoxTab
+
+        sync_page = self._SyncPage()
+        page = AsyncFirefoxPage(sync_page)
+
+        tabs = await page.new_container_tabs(
+            2, "https://example.com", background=False
+        )
+
+        assert [type(tab) for tab in tabs] == [AsyncFirefoxTab, AsyncFirefoxTab]
+        assert [tab._sync for tab in tabs] == sync_page.tabs
+        assert sync_page.calls == [
+            ("new_container_tabs", 2, "https://example.com", False)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_get_tab_returns_none_when_sync_api_returns_none(self):
+        from ruyipage._async._generated import AsyncFirefoxPage
+
+        class SyncPage:
+            def get_tab(self, id_or_num=None, title=None, url=None):
+                return None
+
+        page = AsyncFirefoxPage(SyncPage())
+
+        assert await page.get_tab("missing-tab") is None
+
+
+class TestAsyncUnitProxyWrapping:
+    """Verify async unit proxies do not leak sync owner/element objects."""
+
+    class _OwnerUnit:
+        def __init__(self, owner):
+            self._owner = owner
+
+        def __call__(self):
+            return self._owner
+
+        def maximize(self):
+            return self._owner
+
+        def self_unit(self):
+            return self
+
+    class _ElementUnit:
+        def __init__(self, element):
+            self._ele = element
+
+        def __call__(self):
+            return self._ele
+
+        def displayed(self):
+            return self._ele
+
+        def self_unit(self):
+            return self
+
+    @pytest.mark.asyncio
+    async def test_page_unit_owner_return_stays_async(self):
+        from ruyipage._async._generated import AsyncFirefoxPage
+
+        class SyncPage:
+            def __init__(self):
+                self.window = TestAsyncUnitProxyWrapping._OwnerUnit(self)
+
+        sync_page = SyncPage()
+        page = AsyncFirefoxPage(sync_page)
+
+        assert await page.window.maximize() is page
+        assert await page.window.self_unit() is page.window
+        assert page.window._owner is page
+        assert await page.window() is page
+
+    @pytest.mark.asyncio
+    async def test_element_unit_element_return_stays_async(self):
+        from ruyipage._async._generated import AsyncFirefoxElement
+
+        class SyncElement:
+            def __init__(self):
+                self.wait = TestAsyncUnitProxyWrapping._ElementUnit(self)
+
+        sync_element = SyncElement()
+        element = AsyncFirefoxElement(sync_element)
+
+        assert await element.wait.displayed() is element
+        assert await element.wait.self_unit() is element.wait
+        assert element.wait._owner is element
+        assert await element.wait() is element
+
+
+class TestAsyncGeneratedReturnWrapping:
+    """Verify generated wrappers preserve async types for object properties."""
+
+    def test_wrap_async_result_maps_sync_objects_to_async_wrappers(self):
+        from ruyipage import FirefoxPage
+        from ruyipage._async._generated import (
+            AsyncFirefoxFrame,
+            AsyncFirefoxPage,
+            AsyncFirefoxTab,
+            AsyncFirefoxElement,
+            AsyncNoneElement,
+            _wrap_async_result,
+        )
+        from ruyipage._elements.firefox_element import FirefoxElement
+        from ruyipage._elements.none_element import NoneElement
+        from ruyipage._pages.firefox_frame import FirefoxFrame
+        from ruyipage._pages.firefox_tab import FirefoxTab
+
+        sync_page = FirefoxPage.__new__(FirefoxPage)
+        sync_tab = FirefoxTab.__new__(FirefoxTab)
+        sync_frame = FirefoxFrame.__new__(FirefoxFrame)
+        sync_element = FirefoxElement.__new__(FirefoxElement)
+        sync_none_element = NoneElement.__new__(NoneElement)
+
+        wrapped_page = _wrap_async_result(sync_page)
+        wrapped_tab = _wrap_async_result(sync_tab)
+        wrapped_frame = _wrap_async_result(sync_frame)
+        wrapped_element = _wrap_async_result(sync_element)
+        wrapped_none_element = _wrap_async_result(sync_none_element)
+
+        assert isinstance(wrapped_page, AsyncFirefoxPage)
+        assert wrapped_page._sync is sync_page
+        assert isinstance(wrapped_tab, AsyncFirefoxTab)
+        assert wrapped_tab._sync is sync_tab
+        assert isinstance(wrapped_frame, AsyncFirefoxFrame)
+        assert wrapped_frame._sync is sync_frame
+        assert isinstance(wrapped_element, AsyncFirefoxElement)
+        assert wrapped_element._sync is sync_element
+        assert isinstance(wrapped_none_element, AsyncNoneElement)
+        assert wrapped_none_element._sync is sync_none_element
+        assert _wrap_async_result(None) is None
+
+        scalar = {"plain": "value"}
+        assert _wrap_async_result(scalar) is scalar
+
+    @pytest.mark.asyncio
+    async def test_frame_parent_wraps_parent_page(self):
+        from ruyipage import FirefoxPage
+        from ruyipage._async._generated import AsyncFirefoxFrame, AsyncFirefoxPage
+
+        sync_parent = FirefoxPage.__new__(FirefoxPage)
+
+        class SyncFrame:
+            @property
+            def parent(self):
+                return sync_parent
+
+        parent = await AsyncFirefoxFrame(SyncFrame()).get_parent()
+
+        assert isinstance(parent, AsyncFirefoxPage)
+        assert parent._sync is sync_parent
+
+    @pytest.mark.asyncio
+    async def test_element_shadow_getters_wrap_elements(self):
+        from ruyipage._elements.firefox_element import FirefoxElement
+        from ruyipage._async._generated import AsyncFirefoxElement
+
+        sync_shadow = FirefoxElement.__new__(FirefoxElement)
+
+        class SyncElement:
+            @property
+            def shadow_root(self):
+                return sync_shadow
+
+            @property
+            def closed_shadow_root(self):
+                return None
+
+        element = AsyncFirefoxElement(SyncElement())
+
+        shadow = await element.get_shadow_root()
+        closed_shadow = await element.get_closed_shadow_root()
+
+        assert isinstance(shadow, AsyncFirefoxElement)
+        assert shadow._sync is sync_shadow
+        assert closed_shadow is None
+
+
+class TestPytestMarkerBuckets:
+    """Verify fast/browser bucket rules without launching Firefox."""
+
+    def test_browser_bucket_detects_paths_and_fixtures(self):
+        from tests import conftest
+
+        assert conftest._is_browser_test("tests/smoke/test_startup.py", ())
+        assert conftest._is_browser_test("tests/integration/test_flow.py", ())
+        assert conftest._is_browser_test("tests/release/test_gate.py", ())
+        assert conftest._is_browser_test(
+            "tests/async_smoke/test_async_smoke.py", ()
+        )
+        assert conftest._is_browser_test(
+            "tests/features/test_private_mode.py", ()
+        )
+        assert conftest._is_browser_test(
+            "tests/custom/test_direct_browser.py", ("tmp_path", "page")
+        )
+
+    def test_fast_bucket_keeps_pure_unit_tests_short(self):
+        from tests import conftest
+
+        assert not conftest._is_browser_test(
+            "tests/async_smoke/test_async_baseline.py", ()
+        )
+        assert not conftest._is_browser_test(
+            "tests/features/test_launch_proxy.py", ("tmp_path", "monkeypatch")
+        )
+        assert not conftest._is_browser_test(
+            "tests/test_fingerprint_builder.py", ()
+        )
+
+    def test_feature_files_that_construct_pages_are_browser_bucketed(self):
+        from pathlib import Path
+        from tests import conftest
+
+        feature_dir = conftest.TESTS_DIR / "features"
+        page_constructing_files = [
+            path for path in feature_dir.glob("test_*.py")
+            if "FirefoxPage(" in path.read_text(encoding="utf-8")
+        ]
+
+        assert page_constructing_files
+        for path in page_constructing_files:
+            rel_path = path.relative_to(conftest.PROJECT_ROOT).as_posix()
+            assert conftest._is_browser_test(rel_path, ()), rel_path
+
+    def test_browser_file_allowlist_points_to_existing_tests(self):
+        from tests import conftest
+
+        for rel_path in conftest.BROWSER_TEST_FILES:
+            path = conftest.PROJECT_ROOT / rel_path
+            assert path.is_file(), rel_path

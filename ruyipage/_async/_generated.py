@@ -3,7 +3,7 @@
 # │ WARNING: 此文件由 scripts/generate_async_api.py 自动生成          │
 # │ 请勿手动编辑！修改后请重新运行生成器：                               │
 # │   python scripts/generate_async_api.py                          │
-# │ 生成时间: 2026-04-23 22:51:15                                        │
+# │ 生成时间: 2026-05-31 15:03:41                                        │
 # └──────────────────────────────────────────────────────────────────┘
 
 from .greenlet_bridge import greenlet_spawn
@@ -18,8 +18,9 @@ class AsyncUnitProxy:
     将所有公共方法自动包装为异步版本。
     """
 
-    def __init__(self, sync_unit):
+    def __init__(self, sync_unit, owner=None):
         self._sync = sync_unit
+        self._owner = owner
 
     def __getattr__(self, name):
         if name.startswith("_"):
@@ -29,7 +30,8 @@ class AsyncUnitProxy:
 
         if callable(attr):
             async def _async_method(*args, **kwargs):
-                return await greenlet_spawn(attr, *args, **kwargs)
+                _r = await greenlet_spawn(attr, *args, **kwargs)
+                return _wrap_async_result(_r, owner=self._owner, unit_proxy=self)
             _async_method.__name__ = name
             _async_method.__qualname__ = "AsyncUnitProxy.{}".format(name)
             return _async_method
@@ -39,7 +41,8 @@ class AsyncUnitProxy:
 
     async def __call__(self, *args, **kwargs):
         """支持可调用的 unit（如 PageWaiter.__call__、ElementWaiter.__call__）"""
-        return await greenlet_spawn(self._sync, *args, **kwargs)
+        _r = await greenlet_spawn(self._sync, *args, **kwargs)
+        return _wrap_async_result(_r, owner=self._owner, unit_proxy=self)
 
     def __repr__(self):
         return "<Async{}>".format(repr(self._sync))
@@ -67,6 +70,32 @@ class AsyncNoneElement:
 
 
 
+
+def _wrap_async_result(value, owner=None, unit_proxy=None):
+    """Wrap sync ruyiPage objects returned through async proxies."""
+    if value is None:
+        return None
+    if unit_proxy is not None and value is getattr(unit_proxy, "_sync", None):
+        return unit_proxy
+    if owner is not None:
+        sync_owner = getattr(owner, "_sync", None)
+        if value is sync_owner:
+            return owner
+    value_type = getattr(value, "_type", None)
+    if value_type == "FirefoxPage":
+        return AsyncFirefoxPage(value)
+    if value_type == "FirefoxTab":
+        return AsyncFirefoxTab(value)
+    if value_type == "FirefoxFrame":
+        return AsyncFirefoxFrame(value)
+    if value_type == "FirefoxElement":
+        return AsyncFirefoxElement(value)
+    if value_type == "NoneElement":
+        return AsyncNoneElement(value)
+    return value
+
+
+
 class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
     """FirefoxBase的异步代理"""
 
@@ -83,199 +112,213 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return self._sync.tab_id
 
     async def get_cookies(self):
-        return await greenlet_spawn(lambda: self._sync.cookies)
+        _r = await greenlet_spawn(lambda: self._sync.cookies)
+        return _wrap_async_result(_r, self)
 
     async def get_html(self):
-        return await greenlet_spawn(lambda: self._sync.html)
+        _r = await greenlet_spawn(lambda: self._sync.html)
+        return _wrap_async_result(_r, self)
 
     async def get_ready_state(self):
-        return await greenlet_spawn(lambda: self._sync.ready_state)
+        _r = await greenlet_spawn(lambda: self._sync.ready_state)
+        return _wrap_async_result(_r, self)
 
     async def get_title(self):
-        return await greenlet_spawn(lambda: self._sync.title)
+        _r = await greenlet_spawn(lambda: self._sync.title)
+        return _wrap_async_result(_r, self)
 
     async def get_url(self):
-        return await greenlet_spawn(lambda: self._sync.url)
+        _r = await greenlet_spawn(lambda: self._sync.url)
+        return _wrap_async_result(_r, self)
 
     async def get_user_agent(self):
-        return await greenlet_spawn(lambda: self._sync.user_agent)
+        _r = await greenlet_spawn(lambda: self._sync.user_agent)
+        return _wrap_async_result(_r, self)
 
     @property
     def actions(self):
         if "actions" not in self._unit_cache:
-            self._unit_cache["actions"] = AsyncUnitProxy(self._sync.actions)
+            self._unit_cache["actions"] = AsyncUnitProxy(self._sync.actions, owner=self)
         return self._unit_cache["actions"]
 
     @property
     def browser_tools(self):
         if "browser_tools" not in self._unit_cache:
-            self._unit_cache["browser_tools"] = AsyncUnitProxy(self._sync.browser_tools)
+            self._unit_cache["browser_tools"] = AsyncUnitProxy(self._sync.browser_tools, owner=self)
         return self._unit_cache["browser_tools"]
 
     @property
     def config(self):
         if "config" not in self._unit_cache:
-            self._unit_cache["config"] = AsyncUnitProxy(self._sync.config)
+            self._unit_cache["config"] = AsyncUnitProxy(self._sync.config, owner=self)
         return self._unit_cache["config"]
 
     @property
     def console(self):
         if "console" not in self._unit_cache:
-            self._unit_cache["console"] = AsyncUnitProxy(self._sync.console)
+            self._unit_cache["console"] = AsyncUnitProxy(self._sync.console, owner=self)
         return self._unit_cache["console"]
 
     @property
     def contexts(self):
         if "contexts" not in self._unit_cache:
-            self._unit_cache["contexts"] = AsyncUnitProxy(self._sync.contexts)
+            self._unit_cache["contexts"] = AsyncUnitProxy(self._sync.contexts, owner=self)
         return self._unit_cache["contexts"]
 
     @property
     def downloads(self):
         if "downloads" not in self._unit_cache:
-            self._unit_cache["downloads"] = AsyncUnitProxy(self._sync.downloads)
+            self._unit_cache["downloads"] = AsyncUnitProxy(self._sync.downloads, owner=self)
         return self._unit_cache["downloads"]
 
     @property
     def emulation(self):
         if "emulation" not in self._unit_cache:
-            self._unit_cache["emulation"] = AsyncUnitProxy(self._sync.emulation)
+            self._unit_cache["emulation"] = AsyncUnitProxy(self._sync.emulation, owner=self)
         return self._unit_cache["emulation"]
 
     @property
     def events(self):
         if "events" not in self._unit_cache:
-            self._unit_cache["events"] = AsyncUnitProxy(self._sync.events)
+            self._unit_cache["events"] = AsyncUnitProxy(self._sync.events, owner=self)
         return self._unit_cache["events"]
 
     @property
     def extensions(self):
         if "extensions" not in self._unit_cache:
-            self._unit_cache["extensions"] = AsyncUnitProxy(self._sync.extensions)
+            self._unit_cache["extensions"] = AsyncUnitProxy(self._sync.extensions, owner=self)
         return self._unit_cache["extensions"]
 
     @property
     def intercept(self):
         if "intercept" not in self._unit_cache:
-            self._unit_cache["intercept"] = AsyncUnitProxy(self._sync.intercept)
+            self._unit_cache["intercept"] = AsyncUnitProxy(self._sync.intercept, owner=self)
         return self._unit_cache["intercept"]
 
     @property
     def listen(self):
         if "listen" not in self._unit_cache:
-            self._unit_cache["listen"] = AsyncUnitProxy(self._sync.listen)
+            self._unit_cache["listen"] = AsyncUnitProxy(self._sync.listen, owner=self)
         return self._unit_cache["listen"]
 
     @property
     def local_storage(self):
         if "local_storage" not in self._unit_cache:
-            self._unit_cache["local_storage"] = AsyncUnitProxy(self._sync.local_storage)
+            self._unit_cache["local_storage"] = AsyncUnitProxy(self._sync.local_storage, owner=self)
         return self._unit_cache["local_storage"]
 
     @property
     def navigation(self):
         if "navigation" not in self._unit_cache:
-            self._unit_cache["navigation"] = AsyncUnitProxy(self._sync.navigation)
+            self._unit_cache["navigation"] = AsyncUnitProxy(self._sync.navigation, owner=self)
         return self._unit_cache["navigation"]
 
     @property
     def network(self):
         if "network" not in self._unit_cache:
-            self._unit_cache["network"] = AsyncUnitProxy(self._sync.network)
+            self._unit_cache["network"] = AsyncUnitProxy(self._sync.network, owner=self)
         return self._unit_cache["network"]
 
     @property
     def prefs(self):
         if "prefs" not in self._unit_cache:
-            self._unit_cache["prefs"] = AsyncUnitProxy(self._sync.prefs)
+            self._unit_cache["prefs"] = AsyncUnitProxy(self._sync.prefs, owner=self)
         return self._unit_cache["prefs"]
 
     @property
     def realms(self):
         if "realms" not in self._unit_cache:
-            self._unit_cache["realms"] = AsyncUnitProxy(self._sync.realms)
+            self._unit_cache["realms"] = AsyncUnitProxy(self._sync.realms, owner=self)
         return self._unit_cache["realms"]
 
     @property
     def rect(self):
         if "rect" not in self._unit_cache:
-            self._unit_cache["rect"] = AsyncUnitProxy(self._sync.rect)
+            self._unit_cache["rect"] = AsyncUnitProxy(self._sync.rect, owner=self)
         return self._unit_cache["rect"]
 
     @property
     def scroll(self):
         if "scroll" not in self._unit_cache:
-            self._unit_cache["scroll"] = AsyncUnitProxy(self._sync.scroll)
+            self._unit_cache["scroll"] = AsyncUnitProxy(self._sync.scroll, owner=self)
         return self._unit_cache["scroll"]
 
     @property
     def session_storage(self):
         if "session_storage" not in self._unit_cache:
-            self._unit_cache["session_storage"] = AsyncUnitProxy(self._sync.session_storage)
+            self._unit_cache["session_storage"] = AsyncUnitProxy(self._sync.session_storage, owner=self)
         return self._unit_cache["session_storage"]
 
     @property
     def set(self):
         if "set" not in self._unit_cache:
-            self._unit_cache["set"] = AsyncUnitProxy(self._sync.set)
+            self._unit_cache["set"] = AsyncUnitProxy(self._sync.set, owner=self)
         return self._unit_cache["set"]
 
     @property
     def states(self):
         if "states" not in self._unit_cache:
-            self._unit_cache["states"] = AsyncUnitProxy(self._sync.states)
+            self._unit_cache["states"] = AsyncUnitProxy(self._sync.states, owner=self)
         return self._unit_cache["states"]
 
     @property
     def touch(self):
         if "touch" not in self._unit_cache:
-            self._unit_cache["touch"] = AsyncUnitProxy(self._sync.touch)
+            self._unit_cache["touch"] = AsyncUnitProxy(self._sync.touch, owner=self)
         return self._unit_cache["touch"]
 
     @property
     def trace(self):
         if "trace" not in self._unit_cache:
-            self._unit_cache["trace"] = AsyncUnitProxy(self._sync.trace)
+            self._unit_cache["trace"] = AsyncUnitProxy(self._sync.trace, owner=self)
         return self._unit_cache["trace"]
 
     @property
     def wait(self):
         if "wait" not in self._unit_cache:
-            self._unit_cache["wait"] = AsyncUnitProxy(self._sync.wait)
+            self._unit_cache["wait"] = AsyncUnitProxy(self._sync.wait, owner=self)
         return self._unit_cache["wait"]
 
     @property
     def window(self):
         if "window" not in self._unit_cache:
-            self._unit_cache["window"] = AsyncUnitProxy(self._sync.window)
+            self._unit_cache["window"] = AsyncUnitProxy(self._sync.window, owner=self)
         return self._unit_cache["window"]
 
     async def accept_alert(self, text=None, timeout=3):
-        return await greenlet_spawn(self._sync.accept_alert, text=text, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.accept_alert, text=text, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def accept_prompt(self, text=None, timeout=3):
-        return await greenlet_spawn(self._sync.accept_prompt, text=text, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.accept_prompt, text=text, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def add_preload_script(self, script):
-        return await greenlet_spawn(self._sync.add_preload_script, script)
+        _r = await greenlet_spawn(self._sync.add_preload_script, script)
+        return _wrap_async_result(_r, self)
 
     async def back(self):
         return await self._run_serialized_navigation('back', )
 
     async def clear_prompt_handler(self):
-        return await greenlet_spawn(self._sync.clear_prompt_handler, )
+        _r = await greenlet_spawn(self._sync.clear_prompt_handler, )
+        return _wrap_async_result(_r, self)
 
     async def delete_cookies(self, name=None, domain=None):
-        return await greenlet_spawn(self._sync.delete_cookies, name=name, domain=domain)
+        _r = await greenlet_spawn(self._sync.delete_cookies, name=name, domain=domain)
+        return _wrap_async_result(_r, self)
 
     async def dismiss_alert(self, timeout=3):
-        return await greenlet_spawn(self._sync.dismiss_alert, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.dismiss_alert, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def dismiss_prompt(self, timeout=3):
-        return await greenlet_spawn(self._sync.dismiss_prompt, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.dismiss_prompt, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def disown_handles(self, handles):
-        return await greenlet_spawn(self._sync.disown_handles, handles)
+        _r = await greenlet_spawn(self._sync.disown_handles, handles)
+        return _wrap_async_result(_r, self)
 
     async def ele(self, locator, index=1, timeout=None):
         _r = await greenlet_spawn(self._sync.ele, locator, index=index, timeout=timeout)
@@ -286,7 +329,8 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return [AsyncFirefoxElement(e) for e in _r]
 
     async def eval_handle(self, expression, await_promise=True):
-        return await greenlet_spawn(self._sync.eval_handle, expression, await_promise=await_promise)
+        _r = await greenlet_spawn(self._sync.eval_handle, expression, await_promise=await_promise)
+        return _wrap_async_result(_r, self)
 
     async def forward(self):
         return await self._run_serialized_navigation('forward', )
@@ -295,10 +339,12 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return await self._run_serialized_navigation('get', url, wait=wait, timeout=timeout)
 
     async def get_cookies(self, all_info=False):
-        return await greenlet_spawn(self._sync.get_cookies, all_info=all_info)
+        _r = await greenlet_spawn(self._sync.get_cookies, all_info=all_info)
+        return _wrap_async_result(_r, self)
 
     async def get_cookies_filtered(self, name=None, domain=None, all_info=True):
-        return await greenlet_spawn(self._sync.get_cookies_filtered, name=name, domain=domain, all_info=all_info)
+        _r = await greenlet_spawn(self._sync.get_cookies_filtered, name=name, domain=domain, all_info=all_info)
+        return _wrap_async_result(_r, self)
 
     async def get_frame(self, locator=None, index=None, context_id=None):
         _r = await greenlet_spawn(self._sync.get_frame, locator=locator, index=index, context_id=context_id)
@@ -309,52 +355,67 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return [AsyncFirefoxFrame(f) for f in _r]
 
     async def get_last_prompt_closed(self):
-        return await greenlet_spawn(self._sync.get_last_prompt_closed, )
+        _r = await greenlet_spawn(self._sync.get_last_prompt_closed, )
+        return _wrap_async_result(_r, self)
 
     async def get_last_prompt_opened(self):
-        return await greenlet_spawn(self._sync.get_last_prompt_opened, )
+        _r = await greenlet_spawn(self._sync.get_last_prompt_opened, )
+        return _wrap_async_result(_r, self)
 
     async def get_realms(self, type_=None):
-        return await greenlet_spawn(self._sync.get_realms, type_=type_)
+        _r = await greenlet_spawn(self._sync.get_realms, type_=type_)
+        return _wrap_async_result(_r, self)
 
     async def get_user_prompt(self):
-        return await greenlet_spawn(self._sync.get_user_prompt, )
+        _r = await greenlet_spawn(self._sync.get_user_prompt, )
+        return _wrap_async_result(_r, self)
 
     async def handle_alert(self, action='accept', text=None, timeout=3):
-        return await greenlet_spawn(self._sync.handle_alert, action=action, text=text, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.handle_alert, action=action, text=text, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def handle_cloudflare_challenge(self, timeout=30, check_interval=2):
-        return await greenlet_spawn(self._sync.handle_cloudflare_challenge, timeout=timeout, check_interval=check_interval)
+        _r = await greenlet_spawn(self._sync.handle_cloudflare_challenge, timeout=timeout, check_interval=check_interval)
+        return _wrap_async_result(_r, self)
 
     async def handle_prompt(self, accept=True, text=None, timeout=3):
-        return await greenlet_spawn(self._sync.handle_prompt, accept=accept, text=text, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.handle_prompt, accept=accept, text=text, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def input_prompt(self, text, timeout=3):
-        return await greenlet_spawn(self._sync.input_prompt, text, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.input_prompt, text, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def is_trusted(self, event_key):
-        return await greenlet_spawn(self._sync.is_trusted, event_key)
+        _r = await greenlet_spawn(self._sync.is_trusted, event_key)
+        return _wrap_async_result(_r, self)
 
     async def pdf(self, path=None, **kwargs):
-        return await greenlet_spawn(self._sync.pdf, path=path, **kwargs)
+        _r = await greenlet_spawn(self._sync.pdf, path=path, **kwargs)
+        return _wrap_async_result(_r, self)
 
     async def prompt_login(self, trigger_locator, username, password, trigger='mouse', timeout=3):
-        return await greenlet_spawn(self._sync.prompt_login, trigger_locator, username, password, trigger=trigger, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.prompt_login, trigger_locator, username, password, trigger=trigger, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def refresh(self, ignore_cache=False):
         return await self._run_serialized_navigation('refresh', ignore_cache=ignore_cache)
 
     async def remove_preload_script(self, script_id):
-        return await greenlet_spawn(self._sync.remove_preload_script, script_id)
+        _r = await greenlet_spawn(self._sync.remove_preload_script, script_id)
+        return _wrap_async_result(_r, self)
 
     async def respond_prompt(self, accept=True, text=None, timeout=3):
-        return await greenlet_spawn(self._sync.respond_prompt, accept=accept, text=text, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.respond_prompt, accept=accept, text=text, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def run_js(self, script, *args, as_expr=None, timeout=None, sandbox=None):
-        return await greenlet_spawn(self._sync.run_js, script, *args, as_expr=as_expr, timeout=timeout, sandbox=sandbox)
+        _r = await greenlet_spawn(self._sync.run_js, script, *args, as_expr=as_expr, timeout=timeout, sandbox=sandbox)
+        return _wrap_async_result(_r, self)
 
     async def run_js_loaded(self, script, *args, as_expr=None, timeout=None):
-        return await greenlet_spawn(self._sync.run_js_loaded, script, *args, as_expr=as_expr, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.run_js_loaded, script, *args, as_expr=as_expr, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
     async def s_ele(self, locator=None):
         _r = await greenlet_spawn(self._sync.s_ele, locator=locator)
@@ -365,10 +426,12 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return _r  # list[StaticElement]
 
     async def save_pdf(self, path, **kwargs):
-        return await greenlet_spawn(self._sync.save_pdf, path, **kwargs)
+        _r = await greenlet_spawn(self._sync.save_pdf, path, **kwargs)
+        return _wrap_async_result(_r, self)
 
     async def screenshot(self, path=None, full_page=False, as_bytes=None, as_base64=None):
-        return await greenlet_spawn(self._sync.screenshot, path=path, full_page=full_page, as_bytes=as_bytes, as_base64=as_base64)
+        _r = await greenlet_spawn(self._sync.screenshot, path=path, full_page=full_page, as_bytes=as_bytes, as_base64=as_base64)
+        return _wrap_async_result(_r, self)
 
     async def set_bypass_csp(self, bypass=True):
         await greenlet_spawn(self._sync.set_bypass_csp, bypass=bypass)
@@ -379,7 +442,8 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return self
 
     async def set_cookies(self, cookies, domain=None, path=None):
-        return await greenlet_spawn(self._sync.set_cookies, cookies, domain=domain, path=path)
+        _r = await greenlet_spawn(self._sync.set_cookies, cookies, domain=domain, path=path)
+        return _wrap_async_result(_r, self)
 
     async def set_download_path(self, path):
         await greenlet_spawn(self._sync.set_download_path, path)
@@ -394,7 +458,8 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return self
 
     async def set_prompt_handler(self, alert='accept', confirm='accept', prompt='ignore', default='accept', prompt_text=None):
-        return await greenlet_spawn(self._sync.set_prompt_handler, alert=alert, confirm=confirm, prompt=prompt, default=default, prompt_text=prompt_text)
+        _r = await greenlet_spawn(self._sync.set_prompt_handler, alert=alert, confirm=confirm, prompt=prompt, default=default, prompt_text=prompt_text)
+        return _wrap_async_result(_r, self)
 
     async def set_screen_orientation(self, orientation_type, angle=0):
         await greenlet_spawn(self._sync.set_screen_orientation, orientation_type, angle=angle)
@@ -417,14 +482,16 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         return self
 
     async def trigger_prompt_target(self, locator, trigger='mouse'):
-        return await greenlet_spawn(self._sync.trigger_prompt_target, locator, trigger=trigger)
+        _r = await greenlet_spawn(self._sync.trigger_prompt_target, locator, trigger=trigger)
+        return _wrap_async_result(_r, self)
 
     async def wait_loading(self, timeout=None):
         await greenlet_spawn(self._sync.wait_loading, timeout=timeout)
         return self
 
     async def wait_prompt(self, timeout=3):
-        return await greenlet_spawn(self._sync.wait_prompt, timeout=timeout)
+        _r = await greenlet_spawn(self._sync.wait_prompt, timeout=timeout)
+        return _wrap_async_result(_r, self)
 
 
 
@@ -432,14 +499,16 @@ class AsyncFirefoxPage(AsyncFirefoxBase):
     """FirefoxPage 的异步代理"""
 
     async def close(self):
-        return await greenlet_spawn(self._sync.close, )
+        _r = await greenlet_spawn(self._sync.close, )
+        return _wrap_async_result(_r, self)
 
     async def close_other_tabs(self, tab_or_ids=None):
-        return await greenlet_spawn(self._sync.close_other_tabs, tab_or_ids=tab_or_ids)
+        _r = await greenlet_spawn(self._sync.close_other_tabs, tab_or_ids=tab_or_ids)
+        return _wrap_async_result(_r, self)
 
     async def get_tab(self, id_or_num=None, title=None, url=None):
         _r = await greenlet_spawn(self._sync.get_tab, id_or_num=id_or_num, title=title, url=url)
-        return AsyncFirefoxTab(_r)
+        return AsyncFirefoxTab(_r) if _r else _r
 
     async def get_tabs(self, title=None, url=None):
         _r = await greenlet_spawn(self._sync.get_tabs, title=title, url=url)
@@ -449,21 +518,33 @@ class AsyncFirefoxPage(AsyncFirefoxBase):
         _r = await greenlet_spawn(lambda: self._sync.latest_tab)
         return AsyncFirefoxTab(_r) if _r else _r
 
-    async def new_tab(self, url=None, background=False):
-        _r = await greenlet_spawn(self._sync.new_tab, url=url, background=background)
-        return AsyncFirefoxTab(_r)
+    async def new_container_tab(self, url=None, background=False):
+        _r = await greenlet_spawn(self._sync.new_container_tab, url=url, background=background)
+        return AsyncFirefoxTab(_r) if _r else _r
+
+    async def new_container_tabs(self, count, url=None, background=False):
+        _r = await greenlet_spawn(self._sync.new_container_tabs, count, url=url, background=background)
+        return [AsyncFirefoxTab(t) for t in _r]
+
+    async def new_tab(self, url=None, background=False, user_context=None):
+        _r = await greenlet_spawn(self._sync.new_tab, url=url, background=background, user_context=user_context)
+        return AsyncFirefoxTab(_r) if _r else _r
 
     async def quit(self, timeout=5, force=False):
-        return await greenlet_spawn(self._sync.quit, timeout=timeout, force=force)
+        _r = await greenlet_spawn(self._sync.quit, timeout=timeout, force=force)
+        return _wrap_async_result(_r, self)
 
     async def save(self, path=None, name=None, as_pdf=False):
-        return await greenlet_spawn(self._sync.save, path=path, name=name, as_pdf=as_pdf)
+        _r = await greenlet_spawn(self._sync.save, path=path, name=name, as_pdf=as_pdf)
+        return _wrap_async_result(_r, self)
 
     async def get_tab_ids(self):
-        return await greenlet_spawn(lambda: self._sync.tab_ids)
+        _r = await greenlet_spawn(lambda: self._sync.tab_ids)
+        return _wrap_async_result(_r, self)
 
     async def get_tabs_count(self):
-        return await greenlet_spawn(lambda: self._sync.tabs_count)
+        _r = await greenlet_spawn(lambda: self._sync.tabs_count)
+        return _wrap_async_result(_r, self)
 
 
 
@@ -475,10 +556,12 @@ class AsyncFirefoxTab(AsyncFirefoxBase):
         return self
 
     async def close(self, others=False):
-        return await greenlet_spawn(self._sync.close, others=others)
+        _r = await greenlet_spawn(self._sync.close, others=others)
+        return _wrap_async_result(_r, self)
 
     async def save(self, path=None, name=None, as_pdf=False):
-        return await greenlet_spawn(self._sync.save, path=path, name=name, as_pdf=as_pdf)
+        _r = await greenlet_spawn(self._sync.save, path=path, name=name, as_pdf=as_pdf)
+        return _wrap_async_result(_r, self)
 
 
 
@@ -486,10 +569,12 @@ class AsyncFirefoxFrame(AsyncFirefoxBase):
     """FirefoxFrame 的异步代理"""
 
     async def get_is_cross_origin(self):
-        return await greenlet_spawn(lambda: self._sync.is_cross_origin)
+        _r = await greenlet_spawn(lambda: self._sync.is_cross_origin)
+        return _wrap_async_result(_r, self)
 
     async def get_parent(self):
-        return await greenlet_spawn(lambda: self._sync.parent)
+        _r = await greenlet_spawn(lambda: self._sync.parent)
+        return _wrap_async_result(_r, self)
 
 
 
@@ -501,100 +586,118 @@ class AsyncFirefoxElement(AsyncFirefoxElementMixin):
         self._unit_cache = {}
 
     async def get_html(self):
-        return await greenlet_spawn(lambda: self._sync.html)
+        _r = await greenlet_spawn(lambda: self._sync.html)
+        return _wrap_async_result(_r, self)
 
     @property
     def click(self):
         if "click" not in self._unit_cache:
-            self._unit_cache["click"] = AsyncUnitProxy(self._sync.click)
+            self._unit_cache["click"] = AsyncUnitProxy(self._sync.click, owner=self)
         return self._unit_cache["click"]
 
     @property
     def rect(self):
         if "rect" not in self._unit_cache:
-            self._unit_cache["rect"] = AsyncUnitProxy(self._sync.rect)
+            self._unit_cache["rect"] = AsyncUnitProxy(self._sync.rect, owner=self)
         return self._unit_cache["rect"]
 
     @property
     def scroll(self):
         if "scroll" not in self._unit_cache:
-            self._unit_cache["scroll"] = AsyncUnitProxy(self._sync.scroll)
+            self._unit_cache["scroll"] = AsyncUnitProxy(self._sync.scroll, owner=self)
         return self._unit_cache["scroll"]
 
     @property
     def select(self):
         if "select" not in self._unit_cache:
-            self._unit_cache["select"] = AsyncUnitProxy(self._sync.select)
+            self._unit_cache["select"] = AsyncUnitProxy(self._sync.select, owner=self)
         return self._unit_cache["select"]
 
     @property
     def set(self):
         if "set" not in self._unit_cache:
-            self._unit_cache["set"] = AsyncUnitProxy(self._sync.set)
+            self._unit_cache["set"] = AsyncUnitProxy(self._sync.set, owner=self)
         return self._unit_cache["set"]
 
     @property
     def states(self):
         if "states" not in self._unit_cache:
-            self._unit_cache["states"] = AsyncUnitProxy(self._sync.states)
+            self._unit_cache["states"] = AsyncUnitProxy(self._sync.states, owner=self)
         return self._unit_cache["states"]
 
     @property
     def wait(self):
         if "wait" not in self._unit_cache:
-            self._unit_cache["wait"] = AsyncUnitProxy(self._sync.wait)
+            self._unit_cache["wait"] = AsyncUnitProxy(self._sync.wait, owner=self)
         return self._unit_cache["wait"]
 
     async def get_attrs(self):
-        return await greenlet_spawn(lambda: self._sync.attrs)
+        _r = await greenlet_spawn(lambda: self._sync.attrs)
+        return _wrap_async_result(_r, self)
 
     async def get_closed_shadow_root(self):
-        return await greenlet_spawn(lambda: self._sync.closed_shadow_root)
+        _r = await greenlet_spawn(lambda: self._sync.closed_shadow_root)
+        return _wrap_async_result(_r, self)
 
     async def get_inner_html(self):
-        return await greenlet_spawn(lambda: self._sync.inner_html)
+        _r = await greenlet_spawn(lambda: self._sync.inner_html)
+        return _wrap_async_result(_r, self)
 
     async def get_is_checked(self):
-        return await greenlet_spawn(lambda: self._sync.is_checked)
+        _r = await greenlet_spawn(lambda: self._sync.is_checked)
+        return _wrap_async_result(_r, self)
 
     async def get_is_displayed(self):
-        return await greenlet_spawn(lambda: self._sync.is_displayed)
+        _r = await greenlet_spawn(lambda: self._sync.is_displayed)
+        return _wrap_async_result(_r, self)
 
     async def get_is_enabled(self):
-        return await greenlet_spawn(lambda: self._sync.is_enabled)
+        _r = await greenlet_spawn(lambda: self._sync.is_enabled)
+        return _wrap_async_result(_r, self)
 
     async def get_link(self):
-        return await greenlet_spawn(lambda: self._sync.link)
+        _r = await greenlet_spawn(lambda: self._sync.link)
+        return _wrap_async_result(_r, self)
 
     async def get_location(self):
-        return await greenlet_spawn(lambda: self._sync.location)
+        _r = await greenlet_spawn(lambda: self._sync.location)
+        return _wrap_async_result(_r, self)
 
     async def get_outer_html(self):
-        return await greenlet_spawn(lambda: self._sync.outer_html)
+        _r = await greenlet_spawn(lambda: self._sync.outer_html)
+        return _wrap_async_result(_r, self)
 
     async def get_pseudo(self):
-        return await greenlet_spawn(lambda: self._sync.pseudo)
+        _r = await greenlet_spawn(lambda: self._sync.pseudo)
+        return _wrap_async_result(_r, self)
 
     async def get_shadow_root(self):
-        return await greenlet_spawn(lambda: self._sync.shadow_root)
+        _r = await greenlet_spawn(lambda: self._sync.shadow_root)
+        return _wrap_async_result(_r, self)
 
     async def get_size(self):
-        return await greenlet_spawn(lambda: self._sync.size)
+        _r = await greenlet_spawn(lambda: self._sync.size)
+        return _wrap_async_result(_r, self)
 
     async def get_src(self):
-        return await greenlet_spawn(lambda: self._sync.src)
+        _r = await greenlet_spawn(lambda: self._sync.src)
+        return _wrap_async_result(_r, self)
 
     async def get_tag(self):
-        return await greenlet_spawn(lambda: self._sync.tag)
+        _r = await greenlet_spawn(lambda: self._sync.tag)
+        return _wrap_async_result(_r, self)
 
     async def get_text(self):
-        return await greenlet_spawn(lambda: self._sync.text)
+        _r = await greenlet_spawn(lambda: self._sync.text)
+        return _wrap_async_result(_r, self)
 
     async def get_value(self):
-        return await greenlet_spawn(lambda: self._sync.value)
+        _r = await greenlet_spawn(lambda: self._sync.value)
+        return _wrap_async_result(_r, self)
 
     async def attr(self, name):
-        return await greenlet_spawn(self._sync.attr, name)
+        _r = await greenlet_spawn(self._sync.attr, name)
+        return _wrap_async_result(_r, self)
 
     async def child(self, locator=None, index=1, timeout=None):
         _r = await greenlet_spawn(self._sync.child, locator=locator, index=index, timeout=timeout)
@@ -653,21 +756,25 @@ class AsyncFirefoxElement(AsyncFirefoxElementMixin):
         return AsyncFirefoxElement(_r) if _r else AsyncNoneElement(_r)
 
     async def property(self, name):
-        return await greenlet_spawn(self._sync.property, name)
+        _r = await greenlet_spawn(self._sync.property, name)
+        return _wrap_async_result(_r, self)
 
     async def right_click(self):
         await greenlet_spawn(self._sync.right_click, )
         return self
 
     async def run_js(self, script, *args):
-        return await greenlet_spawn(self._sync.run_js, script, *args)
+        _r = await greenlet_spawn(self._sync.run_js, script, *args)
+        return _wrap_async_result(_r, self)
 
     async def s_ele(self, locator=None):
         _r = await greenlet_spawn(self._sync.s_ele, locator=locator)
         return _r  # StaticElement, no async wrapper needed
 
     async def screenshot(self, path=None, as_bytes=None, as_base64=None):
-        return await greenlet_spawn(self._sync.screenshot, path=path, as_bytes=as_bytes, as_base64=as_base64)
+        _r = await greenlet_spawn(self._sync.screenshot, path=path, as_bytes=as_bytes, as_base64=as_base64)
+        return _wrap_async_result(_r, self)
 
     async def style(self, name, pseudo=''):
-        return await greenlet_spawn(self._sync.style, name, pseudo=pseudo)
+        _r = await greenlet_spawn(self._sync.style, name, pseudo=pseudo)
+        return _wrap_async_result(_r, self)

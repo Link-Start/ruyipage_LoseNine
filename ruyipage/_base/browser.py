@@ -742,7 +742,7 @@ class Firefox(object):
                 idx = id_or_num - 1
             else:
                 idx = id_or_num
-            if 0 <= idx < len(self._context_ids) or idx < 0:
+            if -len(self._context_ids) <= idx < len(self._context_ids):
                 return self._get_or_create_tab(self._context_ids[idx])
             return None
 
