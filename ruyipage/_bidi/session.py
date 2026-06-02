@@ -52,6 +52,64 @@ def subscribe(driver, events, contexts=None):
     return driver.run("session.subscribe", params)
 
 
+def subscribe_compatible(driver, events, contexts=None):
+    """兼容订阅事件，避免一个不支持的事件拖垮整批订阅。
+
+    Firefox / BiDi 版本之间存在事件名支持差异。某些版本会因为列表中
+    任意一个未知事件拒绝整个 ``session.subscribe``，因此批量失败后逐个
+    重试，保留可用事件。
+
+    Returns:
+        dict: ``events`` 为成功订阅的事件列表，``failed_events`` 为
+        ``[(event, exc), ...]``，``subscription`` 可直接传给 unsubscribe。
+    """
+    event_list = list(events) if isinstance(events, (list, tuple)) else [events]
+    if not event_list:
+        return {
+            "subscription": None,
+            "subscriptions": [],
+            "events": [],
+            "failed_events": [],
+        }
+
+    try:
+        result = subscribe(driver, event_list, contexts=contexts)
+        subscription = result.get("subscription")
+        return {
+            "subscription": subscription,
+            "subscriptions": [subscription] if subscription else [],
+            "events": event_list,
+            "failed_events": [],
+            "raw": result,
+        }
+    except Exception as batch_error:
+        subscriptions = []
+        accepted_events = []
+        failed_events = []
+
+        for event in event_list:
+            try:
+                result = subscribe(driver, [event], contexts=contexts)
+                subscription = result.get("subscription")
+                if subscription:
+                    subscriptions.append(subscription)
+                accepted_events.append(event)
+            except Exception as event_error:
+                failed_events.append((event, event_error))
+
+        if not accepted_events:
+            raise batch_error
+
+        subscription = subscriptions[0] if len(subscriptions) == 1 else subscriptions
+        return {
+            "subscription": subscription,
+            "subscriptions": subscriptions,
+            "events": accepted_events,
+            "failed_events": failed_events,
+            "batch_error": batch_error,
+        }
+
+
 def unsubscribe(driver, events=None, contexts=None, subscription=None):
     """取消订阅事件
 

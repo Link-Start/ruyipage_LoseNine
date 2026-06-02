@@ -1613,25 +1613,26 @@ class Firefox(object):
     def _subscribe_events(self):
         """订阅关键事件
 
-        包括导航相关的 navigationStarted 和 navigationFailed 事件。
+        兼容不同 Firefox / BiDi 版本的事件名差异。
         """
         if not self._driver:
             return
 
+        events = [
+            "browsingContext.contextCreated",
+            "browsingContext.contextDestroyed",
+            "browsingContext.load",
+            "browsingContext.domContentLoaded",
+            "browsingContext.userPromptOpened",
+            "browsingContext.userPromptClosed",
+            "browsingContext.navigationStarted",
+            "browsingContext.navigationFailed",
+        ]
+
         try:
-            bidi_session.subscribe(
-                self._driver,
-                [
-                    "browsingContext.contextCreated",
-                    "browsingContext.contextDestroyed",
-                    "browsingContext.load",
-                    "browsingContext.domContentLoaded",
-                    "browsingContext.userPromptOpened",
-                    "browsingContext.userPromptClosed",
-                    "browsingContext.navigationStarted",
-                    "browsingContext.navigationFailed",
-                ],
-            )
+            result = bidi_session.subscribe_compatible(self._driver, events)
+            for event, error in result.get("failed_events", []):
+                logger.debug("跳过当前 Firefox 不支持的事件 %s: %s", event, error)
         except Exception as e:
             logger.warning("订阅事件失败: %s", e)
 

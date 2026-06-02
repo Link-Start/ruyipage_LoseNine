@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 
 from ruyipage import FirefoxOptions, FirefoxPage
-from ruyipage.errors import BrowserConnectError
+from ruyipage.errors import BiDiError, BrowserConnectError
 
 
 def test_page_new_tab_forwards_user_context():
@@ -198,6 +198,67 @@ def test_browser_refresh_tabs_filters_invalid_context_ids(monkeypatch):
     assert browser._context_ids == ["ctx-1"]
 
 
+def test_browser_subscribe_events_falls_back_when_one_event_invalid():
+    from ruyipage._base.browser import Firefox
+
+    class FakeDriver:
+        def __init__(self):
+            self.subscribe_calls = []
+            self.successful_events = []
+            self.callbacks = []
+
+        def run(self, method, params=None):
+            assert method == "session.subscribe"
+            events = list(params["events"])
+            self.subscribe_calls.append(events)
+            if "browsingContext.navigationFailed" in events:
+                raise BiDiError(
+                    "invalid argument",
+                    "browsingContext.navigationFailed is not a valid event name",
+                )
+            self.successful_events.extend(events)
+            return {"subscription": "sub-{}".format(len(self.subscribe_calls))}
+
+        def set_callback(self, event, callback, immediate=False):
+            self.callbacks.append((event, callback, immediate))
+
+    browser = Firefox.__new__(Firefox)
+    browser._driver = FakeDriver()
+
+    browser._subscribe_events()
+
+    assert browser._driver.subscribe_calls[0] == [
+        "browsingContext.contextCreated",
+        "browsingContext.contextDestroyed",
+        "browsingContext.load",
+        "browsingContext.domContentLoaded",
+        "browsingContext.userPromptOpened",
+        "browsingContext.userPromptClosed",
+        "browsingContext.navigationStarted",
+        "browsingContext.navigationFailed",
+    ]
+    assert "browsingContext.contextCreated" in browser._driver.successful_events
+    assert "browsingContext.contextDestroyed" in browser._driver.successful_events
+    assert "browsingContext.load" in browser._driver.successful_events
+    assert "browsingContext.domContentLoaded" in browser._driver.successful_events
+    assert "browsingContext.navigationStarted" in browser._driver.successful_events
+    assert "browsingContext.navigationFailed" not in browser._driver.successful_events
+
+    callback_events = [item[0] for item in browser._driver.callbacks]
+    assert "browsingContext.contextCreated" in callback_events
+    assert "browsingContext.contextDestroyed" in callback_events
+    assert (
+        "browsingContext.load",
+        browser._on_navigation_event,
+        True,
+    ) in browser._driver.callbacks
+    assert (
+        "browsingContext.domContentLoaded",
+        browser._on_navigation_event,
+        True,
+    ) in browser._driver.callbacks
+
+
 def test_browser_try_connect_rejects_missing_context(monkeypatch):
     from ruyipage._base.browser import Firefox
     from ruyipage._configs.firefox_options import FirefoxOptions
@@ -244,6 +305,84 @@ def test_browser_try_connect_rejects_missing_context(monkeypatch):
     assert fake_socket.timeout == 0.1
     browser._wait_for_initial_context.assert_called_once_with()
     fake_driver.stop.assert_called_once_with()
+
+
+def test_browser_try_connect_survives_invalid_event_subscription(monkeypatch):
+    from ruyipage._base.browser import Firefox
+    from ruyipage._configs.firefox_options import FirefoxOptions
+    import ruyipage._base.browser as browser_module
+
+    class FakeSocket:
+        timeout = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def settimeout(self, timeout):
+            self.timeout = timeout
+
+        def connect(self, address):
+            return None
+
+    class FakeDriver:
+        def __init__(self):
+            self.subscribe_calls = []
+            self.successful_events = []
+            self.callbacks = []
+            self.stop = mock.Mock()
+
+        def start(self, ws_url):
+            self.ws_url = ws_url
+
+        def run(self, method, params=None):
+            assert method == "session.subscribe"
+            events = list(params["events"])
+            self.subscribe_calls.append(events)
+            if "browsingContext.navigationFailed" in events:
+                raise BiDiError(
+                    "invalid argument",
+                    "browsingContext.navigationFailed is not a valid event name",
+                )
+            self.successful_events.extend(events)
+            return {"subscription": "sub-{}".format(len(self.subscribe_calls))}
+
+        def set_callback(self, event, callback, immediate=False):
+            self.callbacks.append((event, callback, immediate))
+
+    fake_driver = FakeDriver()
+    fake_socket = FakeSocket()
+    browser = Firefox.__new__(Firefox)
+    browser._address = "127.0.0.1:9222"
+    browser._options = FirefoxOptions()
+    browser._session_id = None
+    browser._owns_session = False
+    browser._driver = None
+    browser._context_ids = ["ctx-1"]
+    browser._context_ids_lock = threading.Lock()
+    browser._reserved_port = None
+    browser._create_session = mock.Mock(
+        side_effect=lambda: setattr(browser, "_session_id", "sid")
+    )
+    browser._setup_proxy_auth = mock.Mock()
+    browser._setup_download_behavior = mock.Mock()
+    browser._wait_for_initial_context = mock.Mock(return_value=True)
+
+    monkeypatch.setattr(browser_module.socket, "socket", lambda *args, **kwargs: fake_socket)
+    monkeypatch.setattr(browser_module, "get_bidi_ws_url", lambda *args, **kwargs: "ws")
+    monkeypatch.setattr(browser_module, "BrowserBiDiDriver", lambda address: fake_driver)
+
+    assert browser._try_connect() is True
+    assert browser._driver is fake_driver
+    assert fake_socket.timeout == 0.1
+    assert "browsingContext.load" in fake_driver.successful_events
+    assert "browsingContext.navigationFailed" not in fake_driver.successful_events
+    fake_driver.stop.assert_not_called()
+    browser._setup_proxy_auth.assert_called_once_with()
+    browser._setup_download_behavior.assert_called_once_with()
+    browser._wait_for_initial_context.assert_called_once_with()
 
 
 def test_firefox_page_init_creates_valid_context_when_existing_tabs_invalid(monkeypatch):

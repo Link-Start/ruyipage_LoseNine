@@ -272,11 +272,12 @@ def launch(
     return FirefoxPage(opts)
 
 
-def attach(address="127.0.0.1:9222"):
+def attach(address="127.0.0.1:9222", xpath_picker=False):
     """连接到已启动的 Firefox 调试地址（小白友好入口）。
 
     Args:
         address: 调试地址，例如 127.0.0.1:9222
+        xpath_picker: 是否启用页面 XPath 选择浮窗
 
     Returns:
         FirefoxPage
@@ -287,22 +288,37 @@ def attach(address="127.0.0.1:9222"):
         - 即使设置了 ``close_on_exit(True)``，这里在 Python 退出时也只会
           断开连接，不会主动关闭外部浏览器。
     """
-    opts = FirefoxOptions().set_address(address).existing_only(True)
-    return FirefoxPage(opts)
+    opts = (
+        FirefoxOptions()
+        .set_address(address)
+        .existing_only(True)
+        .enable_xpath_picker(xpath_picker)
+    )
+    page = FirefoxPage(opts)
+    if xpath_picker:
+        page._browser.options.enable_xpath_picker(True)
+        page._maybe_enable_xpath_picker()
+    return page
 
 
-def attach_exist_browser(address="127.0.0.1:9222", tab_index=1, latest_tab=False):
+def attach_exist_browser(
+    address="127.0.0.1:9222",
+    tab_index=1,
+    latest_tab=False,
+    xpath_picker=False,
+):
     """接管一个已经启动的 Firefox 浏览器。
 
     Args:
         address: 调试地址，例如 127.0.0.1:9222
         tab_index: 接管后默认切到第几个 tab，按 1 开始计数
         latest_tab: True 时优先切到最新 tab，忽略 tab_index
+        xpath_picker: 是否启用页面 XPath 选择浮窗
 
     Returns:
         FirefoxPage
     """
-    page = attach(address)
+    page = attach(address, xpath_picker=xpath_picker)
     target_tab = None
 
     if latest_tab:
@@ -314,6 +330,7 @@ def attach_exist_browser(address="127.0.0.1:9222", tab_index=1, latest_tab=False
         page.browser.activate_tab(target_tab)
         page._context_id = target_tab.tab_id
         page._driver = type(page._driver)(page.browser.driver, target_tab.tab_id)
+        page._maybe_enable_xpath_picker()
 
     return page
 
@@ -327,6 +344,7 @@ def auto_attach_exist_browser(
     max_workers=64,
     tab_index=1,
     latest_tab=False,
+    xpath_picker=False,
 ):
     """自动接管一个已经启动的 Firefox 浏览器。
 
@@ -342,6 +360,7 @@ def auto_attach_exist_browser(
         max_workers: 并发扫描线程数，默认 32
         tab_index: 接管后默认切到第几个 tab，按 1 开始计数
         latest_tab: True 时优先切到最新 tab，忽略 tab_index
+        xpath_picker: 是否启用页面 XPath 选择浮窗
 
     Returns:
         FirefoxPage
@@ -354,6 +373,7 @@ def auto_attach_exist_browser(
                 address=address,
                 tab_index=tab_index,
                 latest_tab=latest_tab,
+                xpath_picker=xpath_picker,
             )
         except Exception as e:
             errors.append("{} -> {}".format(address, e))
@@ -378,6 +398,9 @@ def auto_attach_exist_browser(
                 tab_index=tab_index,
                 latest_tab=latest_tab,
             )
+            if page and xpath_picker:
+                page._browser.options.enable_xpath_picker(True)
+                page._maybe_enable_xpath_picker()
             if page:
                 _cleanup_live_probe_infos(browsers, keep_address=item["address"])
                 return page
