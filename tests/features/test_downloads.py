@@ -47,6 +47,23 @@ def test_set_download_behavior_uses_destination_folder(tmp_path):
     )
 
 
+def test_set_download_behavior_creates_destination_folder(tmp_path):
+    driver = mock.Mock()
+    download_dir = tmp_path / "missing" / "downloads"
+
+    bidi_browser.set_download_behavior(
+        driver,
+        behavior="allow",
+        download_path=download_dir,
+    )
+
+    assert download_dir.is_dir()
+    params = driver.run.call_args.args[1]
+    assert params["downloadBehavior"]["destinationFolder"] == os.path.normpath(
+        os.path.abspath(str(download_dir))
+    )
+
+
 def test_set_download_behavior_denies_without_destination_folder():
     driver = mock.Mock()
 
@@ -133,6 +150,60 @@ def test_downloads_manager_set_path_returns_owner(monkeypatch, tmp_path):
 
     assert result is owner
     assert calls == [("allow", tmp_path)]
+
+
+def test_downloads_manager_start_listens_all_contexts_by_default(monkeypatch):
+    browser_driver = mock.Mock()
+    owner = SimpleNamespace(
+        _context_id="ctx-page",
+        _driver=SimpleNamespace(_browser_driver=browser_driver),
+    )
+    manager = DownloadsManager(owner)
+    calls = []
+
+    def fake_subscribe(driver, events, contexts=None):
+        calls.append((driver, events, contexts))
+        return {"subscription": "sub-1"}
+
+    monkeypatch.setattr(
+        "ruyipage._units.downloads.bidi_session.subscribe",
+        fake_subscribe,
+    )
+
+    assert manager.start() is True
+
+    assert calls == [(browser_driver, manager.EVENTS, None)]
+    manager._push(
+        "browsingContext.downloadWillBegin",
+        {"context": "ctx-other", "suggestedFilename": "file.pdf"},
+    )
+    assert manager.events[0].context == "ctx-other"
+    assert manager.events[0].suggested_filename == "file.pdf"
+
+
+def test_downloads_manager_start_can_scope_to_current_context(monkeypatch):
+    browser_driver = mock.Mock()
+    owner = SimpleNamespace(
+        _context_id="ctx-page",
+        _driver=SimpleNamespace(_browser_driver=browser_driver),
+    )
+    manager = DownloadsManager(owner)
+    calls = []
+
+    def fake_subscribe(driver, events, contexts=None):
+        calls.append((driver, events, contexts))
+        return {"subscription": "sub-1"}
+
+    monkeypatch.setattr(
+        "ruyipage._units.downloads.bidi_session.subscribe",
+        fake_subscribe,
+    )
+
+    assert manager.start(all_contexts=False) is True
+
+    assert calls == [(browser_driver, manager.EVENTS, ["ctx-page"])]
+    manager._push("browsingContext.downloadWillBegin", {"context": "ctx-other"})
+    assert manager.events == []
 
 
 def test_firefox_setup_download_behavior_uses_bidi_helper(monkeypatch, tmp_path):

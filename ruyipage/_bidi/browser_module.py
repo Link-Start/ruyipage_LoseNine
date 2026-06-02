@@ -141,9 +141,11 @@ def set_download_behavior(
     if behavior_text in ("allow", "allowAndOpen", "allowed"):
         download_behavior = {"type": "allowed"}
         if download_path:
-            download_behavior["destinationFolder"] = os.path.normpath(
+            destination_folder = os.path.normpath(
                 os.path.abspath(os.path.expanduser(os.fspath(download_path)))
             )
+            os.makedirs(destination_folder, exist_ok=True)
+            download_behavior["destinationFolder"] = destination_folder
     elif behavior_text in ("deny", "denied"):
         download_behavior = {"type": "denied"}
     else:
