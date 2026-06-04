@@ -129,6 +129,11 @@ def test_build_proxies_dict_variants():
     }
     pd = build_proxies_dict("proxy.example.com", 8080, "u", "p")
     assert pd["http"].startswith("http://u:p@")
+    pd = build_proxies_dict("proxy.example.com", 1000, "u", "p", scheme="socks5")
+    assert pd == {
+        "http": "socks5h://u:p@proxy.example.com:1000",
+        "https": "socks5h://u:p@proxy.example.com:1000",
+    }
 
 
 def test_geo_sources_have_registered_parsers():
@@ -638,6 +643,42 @@ def test_apply_smart_fingerprint_full_pipeline(tmp_path):
 
     # userdir under provided base_dir
     assert os.path.commonpath([ctx.userdir, str(tmp_path)]) == str(tmp_path)
+
+
+def test_apply_smart_fingerprint_supports_socks5_auth_proxy(tmp_path):
+    geo = _make_geo()
+
+    with mock.patch.object(builder, "fetch_geo_info", return_value=geo) as m_geo, \
+            mock.patch.object(builder, "fetch_public_ipv6",
+                              return_value=None):
+        opts = _StubOptions()
+        ctx = apply_smart_fingerprint(
+            opts,
+            proxy_scheme="socks5",
+            proxy_host="gate.example.com",
+            proxy_port=1000,
+            proxy_user="user-value",
+            proxy_pwd="pass-value",
+            base_dir=str(tmp_path),
+            require_country="US",
+            fetch_ipv6=False,
+            rng=random.Random(123),
+        )
+
+    m_geo.assert_called_once()
+    assert m_geo.call_args.args[0] == {
+        "http": "socks5h://user-value:pass-value@gate.example.com:1000",
+        "https": "socks5h://user-value:pass-value@gate.example.com:1000",
+    }
+    assert opts.calls[0][1] == ("socks5://gate.example.com:1000",)
+
+    text = open(ctx.fpfile_path, encoding="utf-8").read()
+    assert "socksauth.host:gate.example.com" in text
+    assert "socksauth.port:1000" in text
+    assert "socksauth.username:user-value" in text
+    assert "socksauth.password:pass-value" in text
+    assert "httpauth.username:user-value" not in text
+    assert "httpauth.password:pass-value" not in text
 
 
 def test_apply_smart_fingerprint_uses_online_geo_before_manual_geo(tmp_path):

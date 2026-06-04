@@ -125,6 +125,30 @@ def test_write_prefs_uses_socksauth_fields_from_fpfile(tmp_path):
     assert "password-value" not in content
 
 
+def test_proxy_auth_credentials_read_socksauth_fields_from_fpfile(tmp_path):
+    fpfile = tmp_path / "fp.txt"
+    fpfile.write_text(
+        "\n".join(
+            [
+                "socksauth.host:proxy.example.com",
+                "socksauth.port:1000",
+                "socksauth.username:username-value",
+                "socksauth.password:password-value",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    opts = FirefoxOptions()
+    opts.quick_start(user_dir=str(tmp_path), fpfile=str(fpfile))
+
+    assert opts._get_proxy_auth_credentials() == {
+        "username": "username-value",
+        "password": "password-value",
+    }
+
+
 def test_write_prefs_does_not_treat_fpfile_ipv6_as_socks5_proxy(tmp_path):
     fpfile = tmp_path / "fp.txt"
     fpfile.write_text(

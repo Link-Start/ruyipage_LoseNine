@@ -33,7 +33,7 @@ Public API
     pick_fingerprint(geo, ...) -> FingerprintProfile
     write_fpfile(path, geo, fp, ...) -> None
 
-    build_proxies_dict(host, port, user, pwd) -> Optional[Dict[str, str]]
+    build_proxies_dict(host, port, user, pwd, scheme) -> Optional[Dict[str, str]]
     list_hardware_profiles() -> List[HardwareProfile]
     get_country_profile(cc) -> CountryProfile
     default_fingerprints_path() -> str
@@ -75,6 +75,15 @@ Typical usage
                 "longitude": -104.9903,
             },
             logger=print,
+        )
+
+        # SOCKS5 password proxy:
+        ctx = apply_smart_fingerprint(
+            opts,
+            proxy_scheme="socks5",
+            proxy_host="gate.example.com", proxy_port=1000,
+            proxy_user="u", proxy_pwd="p",
+            require_country="US",
         )
     except CountryMismatchError as e:
         print(f"country mismatch: {e.actual} != {e.required}")
@@ -552,6 +561,7 @@ def build_proxies_dict(
     port: Optional[int],
     user: Optional[str] = None,
     pwd: Optional[str] = None,
+    scheme: str = "http",
 ) -> Optional[Dict[str, str]]:
     """Build a ``requests``-compatible ``proxies`` dict.
 
@@ -560,8 +570,11 @@ def build_proxies_dict(
     host, port : str / int
         Proxy host / port. If either is falsy, returns ``None`` (direct).
     user, pwd : str, optional
-        HTTP basic auth credentials embedded in the URL. Both must be
+        Proxy credentials embedded in the URL. Both must be
         provided together; otherwise the proxy is treated as anonymous.
+    scheme : str
+        ``"http"`` by default. ``"socks5"`` uses ``socks5h`` for
+        requests so DNS resolution is performed through the proxy.
 
     Returns
     -------
@@ -570,10 +583,24 @@ def build_proxies_dict(
     """
     if not host or not port:
         return None
-    if user and pwd:
-        url = "http://{}:{}@{}:{}".format(user, pwd, host, port)
+    scheme = (scheme or "http").strip().lower()
+    # requests uses a different URL scheme for SOCKS5 remote DNS.  Keep
+    # FirefoxOptions on socks5:// later, but use socks5h:// here so geo
+    # probes resolve the target through the proxy instead of the local host.
+    if scheme in ("socks", "socks5"):
+        url_scheme = "socks5h"
+    elif scheme == "socks4":
+        url_scheme = "socks4"
+    elif scheme in ("http", "https"):
+        url_scheme = "http"
     else:
-        url = "http://{}:{}".format(host, port)
+        raise FingerprintConfigError(
+            "proxy_scheme must be one of: http, https, socks5, socks4"
+        )
+    if user and pwd:
+        url = "{}://{}:{}@{}:{}".format(url_scheme, user, pwd, host, port)
+    else:
+        url = "{}://{}:{}".format(url_scheme, host, port)
     return {"http": url, "https": url}
 
 
@@ -1121,8 +1148,11 @@ def write_fpfile(
     geo: GeoInfo,
     fp: FingerprintProfile,
     *,
+    proxy_host: Optional[str] = None,
+    proxy_port: Optional[int] = None,
     proxy_user: Optional[str] = None,
     proxy_pwd: Optional[str] = None,
+    proxy_scheme: str = "http",
     extra: Optional[Dict[str, str]] = None,
 ) -> None:
     """Serialize ``(geo, fp)`` to a firefox-fingerprintBrowser fpfile.
@@ -1139,9 +1169,10 @@ def write_fpfile(
         Source of WebRTC IPs and timezone.
     fp : FingerprintProfile
         Source of every other field (hardware + country + UA + canvas).
-    proxy_user, proxy_pwd : str, optional
-        When both are provided, ``httpauth.*`` lines are appended so the
-        kernel can authenticate the HTTP proxy automatically.
+    proxy_host, proxy_port, proxy_user, proxy_pwd, proxy_scheme : optional
+        When HTTP credentials are provided, ``httpauth.*`` lines are
+        appended. When ``proxy_scheme`` is SOCKS5, ``socksauth.*`` fields
+        are appended so the fingerprint browser can authenticate SOCKS5.
     extra : dict, optional
         Additional ``key: value`` pairs appended after the core fields.
         Cannot override any reserved key (see ``_RESERVED_KEYS``).
@@ -1208,7 +1239,18 @@ def write_fpfile(
     a("height:" + str(hw.height))
     a("canvas:" + str(fp.canvas_seed))
 
-    if proxy_user and proxy_pwd:
+    proxy_scheme = (proxy_scheme or "http").strip().lower()
+    # The fingerprint browser reads HTTP and SOCKS5 proxy credentials from
+    # different fpfile namespaces.  Writing HTTP credentials for a SOCKS5
+    # proxy leaves Firefox without usable SOCKS credentials and can trigger
+    # the native username/password dialog.
+    if proxy_scheme in ("socks", "socks5"):
+        if proxy_host and proxy_port and proxy_user and proxy_pwd:
+            a("socksauth.host:" + str(proxy_host))
+            a("socksauth.port:" + str(int(proxy_port)))
+            a("socksauth.username:" + proxy_user)
+            a("socksauth.password:" + proxy_pwd)
+    elif proxy_user and proxy_pwd:
         a("httpauth.username:" + proxy_user)
         a("httpauth.password:" + proxy_pwd)
 
@@ -1246,7 +1288,7 @@ class FingerprintContext:
         Absolute path of the fpfile written.
     proxies : dict or None
         ``requests``-style proxies dict (mirrored from inputs).
-    proxy_host / proxy_port / proxy_user / proxy_pwd
+    proxy_scheme / proxy_host / proxy_port / proxy_user / proxy_pwd
         Original proxy parameters, kept for diagnostics.
     """
 
@@ -1255,6 +1297,7 @@ class FingerprintContext:
     userdir: str
     fpfile_path: str
     proxies: Optional[Dict[str, str]] = None
+    proxy_scheme: str = "http"
     proxy_host: Optional[str] = None
     proxy_port: Optional[int] = None
     proxy_user: Optional[str] = None
@@ -1415,6 +1458,7 @@ def _generate_userdir(base_dir: Optional[str]) -> str:
 def apply_smart_fingerprint(
     opts: Any,
     *,
+    proxy_scheme: str = "http",
     proxy_host: Optional[str] = None,
     proxy_port: Optional[int] = None,
     proxy_user: Optional[str] = None,
@@ -1456,8 +1500,9 @@ def apply_smart_fingerprint(
     opts : FirefoxOptions
         The options instance to configure. Not type-annotated to avoid
         an import cycle with :mod:`ruyipage._configs.firefox_options`.
-    proxy_host / proxy_port / proxy_user / proxy_pwd
-        HTTP proxy info; omit for direct connection.
+    proxy_scheme / proxy_host / proxy_port / proxy_user / proxy_pwd
+        Proxy info; omit host/port for direct connection. ``proxy_scheme``
+        defaults to ``"http"`` and also supports ``"socks5"``.
     userdir : str, optional
         Pre-existing userdir to reuse; when ``None`` a fresh one is
         created under ``base_dir`` (or the current working directory).
@@ -1499,7 +1544,13 @@ def apply_smart_fingerprint(
     log = logger or (lambda _msg: None)
 
     # 1) proxies dict
-    proxies = build_proxies_dict(proxy_host, proxy_port, proxy_user, proxy_pwd)
+    proxy_scheme = (proxy_scheme or "http").strip().lower()
+    # One user-facing proxy declaration drives two consumers: requests for
+    # geo lookup and Firefox for page traffic.  requests needs socks5h:// for
+    # remote DNS, while Firefox user.js/fpfile uses socks5:// plus socksauth.*.
+    proxies = build_proxies_dict(
+        proxy_host, proxy_port, proxy_user, proxy_pwd, scheme=proxy_scheme
+    )
 
     # 2) geo (with optional country gate)
     try:
@@ -1550,14 +1601,26 @@ def apply_smart_fingerprint(
 
     # 6) write fpfile
     fpfile_path = os.path.join(userdir_abs, fpfile_name)
-    write_fpfile(fpfile_path, geo, fp,
-                 proxy_user=proxy_user, proxy_pwd=proxy_pwd)
+    write_fpfile(
+        fpfile_path,
+        geo,
+        fp,
+        proxy_host=proxy_host,
+        proxy_port=proxy_port,
+        proxy_user=proxy_user,
+        proxy_pwd=proxy_pwd,
+        proxy_scheme=proxy_scheme,
+    )
     log("[fp] fpfile " + fpfile_path)
 
     # 7) opts side-effects
     if set_proxy_on_opts and proxy_host and proxy_port:
         try:
-            opts.set_proxy("http://{}:{}".format(proxy_host, proxy_port))
+            # Do not embed credentials in Firefox network.proxy prefs.  The
+            # fingerprint browser consumes httpauth.* or socksauth.* from the
+            # fpfile, and embedding secrets in user.js would leak them.
+            opts_scheme = "socks5" if proxy_scheme in ("socks", "socks5") else "http"
+            opts.set_proxy("{}://{}:{}".format(opts_scheme, proxy_host, proxy_port))
         except Exception as e:  # noqa: BLE001
             log("[fp] set_proxy failed: " + str(e))
 
@@ -1585,6 +1648,7 @@ def apply_smart_fingerprint(
         userdir=userdir_abs,
         fpfile_path=fpfile_path,
         proxies=proxies,
+        proxy_scheme=proxy_scheme,
         proxy_host=proxy_host,
         proxy_port=proxy_port,
         proxy_user=proxy_user,

@@ -803,6 +803,11 @@ class FirefoxOptions(object):
         """从 fpfile 中读取代理认证用户名密码。"""
         auth = self._read_httpauth_from_fpfile(self._fpfile)
         if not auth:
+            # SOCKS5 password proxies are stored under socksauth.* by the
+            # fingerprint browser.  The BiDi authRequired handler still needs
+            # the same username/password pair when Firefox reports a 407.
+            auth = self._read_socksauth_from_fpfile(self._fpfile)
+        if not auth:
             return None
 
         username = auth.get("username")
@@ -897,6 +902,34 @@ class FirefoxOptions(object):
                 if key == "httpauth.username":
                     result["username"] = value
                 elif key == "httpauth.password":
+                    result["password"] = value
+        return result
+
+    def _read_socksauth_from_fpfile(self, path):
+        """Read SOCKS5 proxy credentials from socksauth.* fpfile fields."""
+        if not path:
+            return {}
+
+        fpfile_path = os.path.abspath(path)
+        if not os.path.exists(fpfile_path):
+            raise FileNotFoundError("fpfile 不存在: {}".format(fpfile_path))
+
+        result = {}
+        pattern = re.compile(
+            r"^\s*(socksauth\.(?:username|password))\s*[:=]\s*(.*?)\s*$"
+        )
+        with open(fpfile_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or line.startswith("//"):
+                    continue
+                match = pattern.match(line)
+                if not match:
+                    continue
+                key, value = match.groups()
+                if key == "socksauth.username":
+                    result["username"] = value
+                elif key == "socksauth.password":
                     result["password"] = value
         return result
 
