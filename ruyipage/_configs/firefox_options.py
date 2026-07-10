@@ -4,7 +4,7 @@
 import os
 import re
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 DEFAULT_REMOTE_DEBUGGING_PORT = 9222
@@ -624,7 +624,8 @@ class FirefoxOptions(object):
         """在 profile 就绪后生成运行期 session fpfile。"""
         has_http_proxy = self._source_fpfile_has_http_proxy_fields()
         self._fpfile_http_proxy_enabled = bool(has_http_proxy)
-        if not self._per_tab_proxies and not has_http_proxy:
+        proxy_url_auth_lines = self._proxy_url_auth_runtime_lines()
+        if not self._per_tab_proxies and not has_http_proxy and not proxy_url_auth_lines:
             return
 
         if not self._profile_path:
@@ -664,6 +665,11 @@ class FirefoxOptions(object):
             for proxy in self._per_tab_proxies:
                 lines.append("proxy.rotate.proxy={}".format(proxy))
 
+        if proxy_url_auth_lines:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines.extend(proxy_url_auth_lines)
+
         os.makedirs(self._profile_path, exist_ok=True)
         with open(session_fpfile, "w", encoding="utf-8") as f:
             f.write("\n".join(lines).rstrip() + "\n")
@@ -675,6 +681,29 @@ class FirefoxOptions(object):
         if not self._source_fpfile:
             return False
         return self._read_http_proxy_from_fpfile(self._source_fpfile) is not None
+
+    def _source_fpfile_has_proxy_auth_fields(self):
+        if not self._source_fpfile:
+            return False
+        return bool(
+            self._read_httpauth_from_fpfile(self._source_fpfile)
+            or self._read_socksauth_from_fpfile(self._source_fpfile)
+        )
+
+    def _proxy_url_auth_runtime_lines(self):
+        if self._source_fpfile_has_proxy_auth_fields():
+            return []
+
+        auth = self._read_proxy_auth_from_proxy_url(self._proxy)
+        if not auth:
+            return []
+
+        scheme = urlsplit(str(self._proxy or "").strip()).scheme.lower()
+        prefix = "socksauth" if scheme.startswith("socks") else "httpauth"
+        return [
+            "{}.username:{}".format(prefix, auth.get("username", "")),
+            "{}.password:{}".format(prefix, auth.get("password", "")),
+        ]
 
     def _should_omit_runtime_http_proxy_line(self, raw_line):
         line = str(raw_line or "").strip()
@@ -901,6 +930,8 @@ class FirefoxOptions(object):
             # the same username/password pair when Firefox reports a 407.
             auth = self._read_socksauth_from_fpfile(self._fpfile)
         if not auth:
+            auth = self._read_proxy_auth_from_proxy_url(self._proxy)
+        if not auth:
             return None
 
         username = auth.get("username")
@@ -1025,6 +1056,25 @@ class FirefoxOptions(object):
                 elif key == "socksauth.password":
                     result["password"] = value
         return result
+
+    def _read_proxy_auth_from_proxy_url(self, proxy):
+        """Read username/password embedded in set_proxy URL values."""
+        value = str(proxy or "").strip()
+        if "://" not in value:
+            return {}
+
+        parsed = urlsplit(value)
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in {"http", "https", "socks", "socks4", "socks5", "socks5h"}:
+            return {}
+
+        if parsed.username is None and parsed.password is None:
+            return {}
+
+        return {
+            "username": unquote(parsed.username or ""),
+            "password": unquote(parsed.password or ""),
+        }
 
     def _read_socks5_proxy_from_fpfile(self, path):
         if not path:

@@ -177,6 +177,23 @@ def test_write_prefs_strips_http_proxy_credentials_from_set_proxy(tmp_path):
     assert "password-value" not in content
 
 
+def test_write_prefs_strips_socks5_proxy_credentials_from_set_proxy(tmp_path):
+    opts = FirefoxOptions()
+    opts.quick_start(
+        user_dir=str(tmp_path),
+        proxy="socks5://username-value:password-value@proxy.example.com:1000",
+    )
+
+    opts.write_prefs_to_profile()
+
+    content = (tmp_path / "user.js").read_text(encoding="utf-8")
+    assert 'user_pref("network.proxy.socks", "proxy.example.com");' in content
+    assert 'user_pref("network.proxy.socks_port", 1000);' in content
+    assert 'user_pref("network.proxy.socks_version", 5);' in content
+    assert "username-value" not in content
+    assert "password-value" not in content
+
+
 def test_prepare_runtime_files_removes_httpauth_host_port_from_browser_fpfile(tmp_path):
     source_fpfile = tmp_path / "source-fp.txt"
     source_fpfile.write_text(
@@ -216,6 +233,26 @@ def test_prepare_runtime_files_removes_httpauth_host_port_from_browser_fpfile(tm
     assert 'user_pref("network.connectivity-service.enabled", false);' in user_js
     assert "username-value" not in user_js
     assert "password-value" not in user_js
+
+
+def test_prepare_runtime_files_writes_socks5_proxy_url_credentials(tmp_path):
+    opts = FirefoxOptions()
+    opts.quick_start(
+        user_dir=str(tmp_path),
+        proxy="socks5://username-value:password-value@proxy.example.com:1000",
+    )
+
+    opts.prepare_runtime_files()
+
+    assert opts.fpfile == str(tmp_path / "ruyipage_runtime_fp.txt")
+    content = (tmp_path / "ruyipage_runtime_fp.txt").read_text(encoding="utf-8")
+    assert "socksauth.username:username-value" in content
+    assert "socksauth.password:password-value" in content
+    assert "socksauth.host" not in content
+    assert "socksauth.port" not in content
+
+    cmd = opts.build_command()
+    assert "--fpfile={}".format(tmp_path / "ruyipage_runtime_fp.txt") in cmd
 
 
 def test_proxy_auth_credentials_ignore_httpauth_host_port(tmp_path):
@@ -259,6 +296,19 @@ def test_proxy_auth_credentials_read_socksauth_fields_from_fpfile(tmp_path):
 
     opts = FirefoxOptions()
     opts.quick_start(user_dir=str(tmp_path), fpfile=str(fpfile))
+
+    assert opts._get_proxy_auth_credentials() == {
+        "username": "username-value",
+        "password": "password-value",
+    }
+
+
+def test_proxy_auth_credentials_read_socks5_credentials_from_set_proxy_url(tmp_path):
+    opts = FirefoxOptions()
+    opts.quick_start(
+        user_dir=str(tmp_path),
+        proxy="socks5://username-value:password-value@proxy.example.com:1000",
+    )
 
     assert opts._get_proxy_auth_credentials() == {
         "username": "username-value",
