@@ -497,6 +497,7 @@ class Actions(object):
             {"source": stage.get("source"), "actions": stage.get("actions", [])[:], "duration": stage.get("duration")}
             for stage in self._action_stages
         ]
+        stages = self._coalesce_pointer_drag_stages(stages)
 
         try:
             for stage in stages:
@@ -518,6 +519,62 @@ class Actions(object):
         self._send_visual_data(pointer_copy, key_copy)
 
         return self
+
+    def _coalesce_pointer_drag_stages(self, stages):
+        """Keep pointerDown -> pointerUp drag gestures in one BiDi command.
+
+        Splitting a drag across multiple input.performActions calls can make
+        complex pages observe pointer movement without the pressed-button drag
+        state. Plain clicks and cross-source click/type chains stay staged.
+        """
+        result = []
+        drag_stage = None
+        pressed_buttons = set()
+
+        def update_pressed(actions):
+            for action in actions:
+                action_type = action.get("type")
+                if action_type == "pointerDown":
+                    pressed_buttons.add(action.get("button", 0))
+                elif action_type == "pointerUp":
+                    pressed_buttons.discard(action.get("button", 0))
+
+        for stage in stages:
+            source = stage.get("source")
+
+            if source == "pointer":
+                actions = stage.get("actions", [])
+                if drag_stage is not None:
+                    drag_stage["actions"].extend(actions)
+                    update_pressed(actions)
+                    if not pressed_buttons:
+                        result.append(drag_stage)
+                        drag_stage = None
+                    continue
+
+                update_pressed(actions)
+                if pressed_buttons:
+                    drag_stage = {"source": "pointer", "actions": actions[:]}
+                else:
+                    result.append(stage)
+                continue
+
+            if source == "wait" and drag_stage is not None and pressed_buttons:
+                drag_stage["actions"].append(
+                    {"type": "pause", "duration": stage.get("duration", 0)}
+                )
+                continue
+
+            if drag_stage is not None:
+                result.append(drag_stage)
+                drag_stage = None
+
+            result.append(stage)
+
+        if drag_stage is not None:
+            result.append(drag_stage)
+
+        return result
 
     def _build_perform_actions(self, stage):
         source = stage.get("source")

@@ -178,3 +178,28 @@ def test_perform_clears_queue_after_exception_whitebox(page, fixture_page_url):
     assert page.actions._pointer_actions == []
     assert page.actions._key_actions == []
     assert page.actions._wheel_actions == []
+
+
+@pytest.mark.feature
+def test_waited_human_drag_keeps_pressed_pointer_state(page, fixture_page_url):
+    """Issue #22: wait() inside a drag must not break pressed pointer moves."""
+    page.set.viewport(800, 600)
+    page.get(fixture_page_url("drag_slider.html"))
+
+    points = page.run_js("return window.__dragSlider.points()")
+
+    page.actions.move_to(points["start"]).hold().wait(0.1).human_move(
+        points["end"], style="line"
+    ).wait(0.1).release().perform()
+    page.wait(0.3)
+
+    state = page.run_js("return window.__dragSlider.state()")
+    drag_moves = [
+        event
+        for event in state["events"]
+        if event["type"] == "pointermove" and event["buttons"] == 1
+    ]
+
+    assert state["left"] >= 250
+    assert drag_moves
+    assert all(event["trusted"] is True for event in drag_moves)
