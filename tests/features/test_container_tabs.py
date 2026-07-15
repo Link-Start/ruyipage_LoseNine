@@ -448,6 +448,81 @@ def test_firefox_page_init_rejects_empty_created_context(monkeypatch):
         FirefoxPage.__init__(page)
 
 
+def test_firefox_options_remembers_requested_startup_window_size():
+    opts = FirefoxOptions().set_window_size(1286, 688)
+
+    assert opts.startup_window_size == (1286, 688)
+    assert "--width=1286" in opts.arguments
+    assert "--height=688" in opts.arguments
+
+
+def test_firefox_page_init_reapplies_requested_startup_window_size(monkeypatch):
+    from ruyipage._pages import firefox_page as page_module
+
+    opts = FirefoxOptions().set_window_size(1286, 688)
+    fake_browser = mock.Mock()
+    fake_browser.tab_ids = ["ctx-1"]
+    fake_browser.driver = object()
+    fake_browser.options = opts
+    calls = []
+
+    class FakeWindow:
+        def normal(self):
+            calls.append(("normal",))
+
+        def set_size(self, width, height):
+            calls.append(("window_set_size", width, height))
+
+    def fake_init_context(self, browser, context_id):
+        self._window = FakeWindow()
+
+    monkeypatch.setattr(page_module, "Firefox", lambda addr_or_opts=None: fake_browser)
+    monkeypatch.setattr(page_module.FirefoxPage, "_init_context", fake_init_context)
+    monkeypatch.setattr(
+        page_module.FirefoxPage,
+        "set_window_size",
+        lambda self, width, height: calls.append(
+            ("page_set_window_size", width, height)
+        ),
+    )
+
+    page = FirefoxPage.__new__(FirefoxPage)
+    FirefoxPage.__init__(page, opts)
+
+    assert calls == [("normal",), ("window_set_size", 1286, 688)]
+
+
+def test_firefox_page_init_keeps_existing_browser_window_state(monkeypatch):
+    from ruyipage._pages import firefox_page as page_module
+
+    opts = FirefoxOptions().set_window_size(1286, 688).existing_only(True)
+    fake_browser = mock.Mock()
+    fake_browser.tab_ids = ["ctx-1"]
+    fake_browser.driver = object()
+    fake_browser.options = opts
+    calls = []
+
+    class FakeWindow:
+        def normal(self):
+            calls.append(("normal",))
+
+    def fake_init_context(self, browser, context_id):
+        self._window = FakeWindow()
+
+    monkeypatch.setattr(page_module, "Firefox", lambda addr_or_opts=None: fake_browser)
+    monkeypatch.setattr(page_module.FirefoxPage, "_init_context", fake_init_context)
+    monkeypatch.setattr(
+        page_module.FirefoxPage,
+        "set_window_size",
+        lambda self, width, height: calls.append(("set_window_size", width, height)),
+    )
+
+    page = FirefoxPage.__new__(FirefoxPage)
+    FirefoxPage.__init__(page, opts)
+
+    assert calls == []
+
+
 def test_browser_latest_tab_returns_last_context_or_none():
     from ruyipage._base.browser import Firefox
 

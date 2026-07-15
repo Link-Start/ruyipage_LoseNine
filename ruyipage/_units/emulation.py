@@ -115,13 +115,21 @@ class EmulationManager(object):
             height: 屏幕高度（CSS 像素）
             device_pixel_ratio: 设备像素比，例如 2.0 / 3.0
         """
-        bidi_emulation.set_screen_settings_override(
+        result = bidi_emulation.set_screen_settings_override(
             self._owner._driver._browser_driver,
             width=width,
             height=height,
             device_pixel_ratio=device_pixel_ratio,
             contexts=self._ctx(),
         )
+        if result is None:
+            bidi_emulation.inject_screen_settings_override(
+                self._owner._driver._browser_driver,
+                self._owner._context_id,
+                width,
+                height,
+                device_pixel_ratio=device_pixel_ratio,
+            )
         return self._owner
 
     def set_user_agent(self, user_agent, platform=None):

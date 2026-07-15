@@ -65,6 +65,7 @@ class FirefoxOptions(object):
         self._random_port = True
         self._random_port_start = DEFAULT_RANDOM_PORT_START
         self._random_port_end = DEFAULT_RANDOM_PORT_END
+        self._startup_window_size = None
         self._user_context = None  # 容器标签页
         self._fpfile = None  # 指纹配置文件路径
         self._source_fpfile = None  # 用户显式传入的原始 fpfile 路径
@@ -167,6 +168,10 @@ class FirefoxOptions(object):
     @property
     def random_port_range(self):
         return (self._random_port_start, self._random_port_end)
+
+    @property
+    def startup_window_size(self):
+        return self._startup_window_size
 
     @property
     def fpfile(self):
@@ -1283,8 +1288,11 @@ class FirefoxOptions(object):
             for a in self._arguments
             if not a.startswith("--width=") and not a.startswith("--height=")
         ]
-        self._arguments.append("--width={}".format(int(width)))
-        self._arguments.append("--height={}".format(int(height)))
+        width = int(width)
+        height = int(height)
+        self._startup_window_size = (width, height)
+        self._arguments.append("--width={}".format(width))
+        self._arguments.append("--height={}".format(height))
         return self
 
     def quick_start(

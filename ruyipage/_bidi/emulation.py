@@ -206,6 +206,52 @@ def set_screen_settings_override(
     )
 
 
+def inject_screen_settings_override(driver, context, width, height, device_pixel_ratio=None):
+    """通过 preload script 回退覆盖 screen / DPR。
+
+    用于不支持 ``emulation.setScreenSettingsOverride`` 的旧版 Firefox。
+    """
+    from . import script as bidi_script
+
+    width_value = "null" if width is None else str(int(width))
+    height_value = "null" if height is None else str(int(height))
+    dpr_value = (
+        "null" if device_pixel_ratio is None else str(float(device_pixel_ratio))
+    )
+    inject_js = """() => {
+  const width = %s;
+  const height = %s;
+  const dpr = %s;
+  function define(target, name, value) {
+    if (value === null || value === undefined) return;
+    try {
+      Object.defineProperty(target, name, {
+        get: () => value,
+        configurable: true
+      });
+    } catch (e) {}
+  }
+  if (window.screen) {
+    // Overrides screen.width / screen.height / screen.availWidth / screen.availHeight.
+    define(screen, 'width', width);
+    define(screen, 'height', height);
+    define(screen, 'availWidth', width);
+    define(screen, 'availHeight', height);
+  }
+  define(window, 'devicePixelRatio', dpr);
+}""" % (width_value, height_value, dpr_value)
+
+    result = bidi_script.add_preload_script(driver, inject_js, contexts=[context])
+    script_id = result.get("script", "")
+
+    try:
+        bidi_script.call_function(driver, context, inject_js)
+    except Exception as e:
+        logger.debug("当前页面 screen 覆盖执行失败（preload 仍然生效）: %s", e)
+
+    return script_id
+
+
 # ---------------------------------------------------------------------------
 # Firefox 未实现的命令（安全降级）
 # ---------------------------------------------------------------------------

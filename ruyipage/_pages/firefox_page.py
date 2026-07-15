@@ -87,6 +87,7 @@ class FirefoxPage(FirefoxBase):
         ctx_id = self._get_initial_context_id()
 
         self._init_context(self._firefox, ctx_id)
+        self._apply_startup_window_size()
 
     def _get_initial_context_id(self):
         deadline = time.time() + _INITIAL_CONTEXT_WAIT_TIMEOUT
@@ -106,6 +107,27 @@ class FirefoxPage(FirefoxBase):
             time.sleep(_INITIAL_CONTEXT_POLL_INTERVAL)
 
         raise BrowserConnectError("无法获取可用的 Firefox browsingContext")
+
+    def _apply_startup_window_size(self):
+        options = getattr(self._firefox, "options", None)
+        size = getattr(options, "startup_window_size", None)
+        if not size or getattr(options, "is_existing_only", False):
+            return
+
+        try:
+            width, height = int(size[0]), int(size[1])
+        except (TypeError, ValueError, IndexError):
+            return
+
+        try:
+            self.window.normal()
+        except Exception as e:
+            logger.debug("Startup window normal failed: %s", e)
+
+        try:
+            self.window.set_size(width, height)
+        except Exception as e:
+            logger.debug("Startup window size apply failed: %s", e)
 
     @property
     def browser(self) -> "Firefox":

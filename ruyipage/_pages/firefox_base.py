@@ -5372,6 +5372,35 @@ class FirefoxBase(BasePage):
 
     # ===== 视口 / 模拟 =====
 
+    def set_window_size(
+        self, width, height, device_pixel_ratio=None
+    ) -> "FirefoxBase":
+        """同步设置当前窗口外框、viewport 和 screen 尺寸。
+
+        Args:
+            width: 目标宽度（CSS 像素）。
+            height: 目标高度（CSS 像素）。
+            device_pixel_ratio: 可选 DPR。传 ``None`` 表示不改动当前 DPR。
+
+        Returns:
+            self: 原页面对象，便于链式调用。
+
+        说明:
+            - ``FirefoxOptions.set_window_size()`` 只负责启动时窗口参数。
+            - 运行时如果希望 ``page.rect.window_size``、
+              ``page.rect.viewport_size``、``window.inner*`` 和 ``screen.*``
+              一起对齐，请使用此方法。
+        """
+        self.window.set_size(width, height)
+        try:
+            self.emulation.set_screen_size(
+                width, height, device_pixel_ratio=device_pixel_ratio
+            )
+        except Exception:
+            pass
+        self.set_viewport(width, height, device_pixel_ratio)
+        return self
+
     def set_viewport(self, width, height, device_pixel_ratio=None) -> "FirefoxBase":
         """设置当前页面视口大小。
 
