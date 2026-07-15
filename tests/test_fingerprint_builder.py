@@ -649,6 +649,47 @@ def test_apply_smart_fingerprint_full_pipeline(tmp_path):
     assert os.path.commonpath([ctx.userdir, str(tmp_path)]) == str(tmp_path)
 
 
+def test_apply_smart_fingerprint_uses_safe_startup_window_for_small_screen(tmp_path):
+    geo = _make_geo()
+    hw = next(p for p in list_hardware_profiles() if p.id == "win-hd4600")
+    country = get_country_profile("US")
+    fp = FingerprintProfile(
+        profile_id=hw.id,
+        firefox_version=152,
+        useragent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) "
+            "Gecko/20100101 Firefox/152.0"
+        ),
+        hardware=hw,
+        country=country,
+        canvas_seed=175,
+        language_primary=country.language_primary,
+        accept_language=country.accept_language,
+    )
+
+    with mock.patch.object(builder, "fetch_geo_info", return_value=geo), \
+            mock.patch.object(builder, "fetch_public_ipv6", return_value=None), \
+            mock.patch.object(builder, "pick_fingerprint", return_value=fp):
+        opts = _StubOptions()
+        ctx = apply_smart_fingerprint(
+            opts,
+            base_dir=str(tmp_path),
+            require_country="US",
+            fetch_ipv6=False,
+        )
+
+    text = open(ctx.fpfile_path, encoding="utf-8").read()
+    assert "width:1366\n" in text
+    assert "height:768\n" in text
+
+    window_call = next(c for c in opts.calls if c[0] == "set_window_size")
+    width, height = window_call[1]
+    assert width < 1366
+    assert height < 768
+    assert width >= 800
+    assert height >= 600
+
+
 def test_apply_smart_fingerprint_supports_socks5_auth_proxy(tmp_path):
     geo = _make_geo()
 

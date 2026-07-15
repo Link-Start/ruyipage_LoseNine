@@ -1455,6 +1455,19 @@ def _generate_userdir(base_dir: Optional[str]) -> str:
     return path
 
 
+def _safe_startup_window_size(width: int, height: int) -> Tuple[int, int]:
+    """Return a non-maximized startup window for a fingerprint screen size."""
+    w = int(width)
+    h = int(height)
+
+    # fpfile width/height describe the spoofed screen. Passing the same values
+    # as Firefox's outer window size can make Windows start/restore maximized,
+    # especially for 1366x768 profiles, which breaks coordinate mapping.
+    safe_w = min(w - 80, 1600)
+    safe_h = min(h - 80, 900)
+    return max(800, safe_w), max(600, safe_h)
+
+
 # ---------------------------------------------------------------------------
 # One-stop API
 # ---------------------------------------------------------------------------
@@ -1642,7 +1655,11 @@ def apply_smart_fingerprint(
 
     if set_window_size_on_opts:
         try:
-            opts.set_window_size(fp.hardware.width, fp.hardware.height)
+            window_width, window_height = _safe_startup_window_size(
+                fp.hardware.width,
+                fp.hardware.height,
+            )
+            opts.set_window_size(window_width, window_height)
         except Exception as e:  # noqa: BLE001
             log("[fp] set_window_size failed: " + str(e))
 
