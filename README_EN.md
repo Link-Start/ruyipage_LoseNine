@@ -1766,6 +1766,8 @@ If you plan to use `ruyiPage` for AI-driven automation analysis, advanced web da
   A central place for `ruyiPage` automation guidance, integration notes, and supporting project documentation: <https://0xshoulderlab.site/automation>
 - 🦊 **Firefox fingerprint browser project**
   Intended for cases where you need a Firefox fingerprint environment, browser takeover, or more realistic automation behavior alongside `ruyiPage`: <https://github.com/LoseNine/firefox-fingerprintBrowser>
+- 🔌 **MCP Server: ruyi-mcp**
+  A community-maintained integration built with the TypeScript MCP SDK and a persistent Python bridge, exposing `ruyiPage` browser automation, network capture, fingerprint analysis, human-like interaction, and WebDriver BiDi JSON Trace workflows to Claude Code, Codex, Cursor, and other MCP clients. Thanks to @Facetomyself for the implementation and maintenance: <https://github.com/Facetomyself/ruyi-mcp>
 - 🟨 **JavaScript implementation: ruyipage-js**
   A companion implementation for the JavaScript / Node.js ecosystem, useful when you want to bring the `ruyiPage` approach and capabilities into JS-based projects: <https://github.com/GanFish404/ruyipage-js>
 - 🐹 **Go implementation: ruyipage-go**

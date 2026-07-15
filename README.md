@@ -1872,6 +1872,8 @@ FingerprintError
   更系统地查看 `ruyiPage` 相关自动化说明、接入方式和配套能力说明：<https://0xshoulderlab.site/automation>
 - 🦊 **Firefox 指纹浏览器项目**
   用于需要 Firefox 指纹环境、浏览器接管或更高真实度自动化场景，适合和 `ruyiPage` 搭配使用：<https://github.com/LoseNine/firefox-fingerprintBrowser>
+- 🔌 **MCP Server：ruyi-mcp**
+  基于 TypeScript MCP SDK 和常驻 Python Bridge 的社区维护集成，将 `ruyiPage` 的浏览器自动化、网络采集、指纹分析、拟人交互和 WebDriver BiDi JSON Trace 能力提供给 Claude Code、Codex、Cursor 等 MCP 客户端。感谢 @Facetomyself 的实现与维护：<https://github.com/Facetomyself/ruyi-mcp>
 - 🟨 **JavaScript 实现：ruyipage-js**
   面向 JavaScript / Node.js 生态的配套实现，适合希望在 JS 项目里接入 `ruyiPage` 思路与能力的场景：<https://github.com/GanFish404/ruyipage-js>
 - 🐹 **Go 语言实现：ruyipage-go**
