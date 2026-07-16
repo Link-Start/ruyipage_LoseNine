@@ -271,7 +271,9 @@ def locate_nodes(
     return driver.run("browsingContext.locateNodes", params)
 
 
-def set_viewport(driver, context, width=None, height=None, device_pixel_ratio=None):
+def set_viewport(
+    driver, context, width=None, height=None, device_pixel_ratio=None, timeout=None
+):
     """设置视口大小。
 
     Args:
@@ -298,7 +300,7 @@ def set_viewport(driver, context, width=None, height=None, device_pixel_ratio=No
         params["viewport"] = {"width": width, "height": height}
     if device_pixel_ratio is not None:
         params["devicePixelRatio"] = device_pixel_ratio
-    return driver.run("browsingContext.setViewport", params)
+    return driver.run("browsingContext.setViewport", params, timeout=timeout)
 
 
 def set_bypass_csp(driver, context, enabled=True):

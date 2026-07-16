@@ -95,7 +95,7 @@ def call_function(driver, context, function_declaration, arguments=None,
 
 
 def add_preload_script(driver, function_declaration, arguments=None,
-                       contexts=None, sandbox=None):
+                       contexts=None, sandbox=None, timeout=None):
     """注册预加载脚本（每次导航前执行）
 
     Args:
@@ -115,7 +115,7 @@ def add_preload_script(driver, function_declaration, arguments=None,
         params['contexts'] = contexts if isinstance(contexts, list) else [contexts]
     if sandbox:
         params['sandbox'] = sandbox
-    return driver.run('script.addPreloadScript', params)
+    return driver.run('script.addPreloadScript', params, timeout=timeout)
 
 
 def remove_preload_script(driver, script_id):

@@ -940,8 +940,18 @@ class Actions(object):
 
             prev_x = x
             prev_y = y
+            prev_dx = dx
+            prev_dy = dy
             x += velocity_x
             y += velocity_y
+
+            next_dx = ex - x
+            next_dy = ey - y
+            crossed_target = prev_dx * next_dx + prev_dy * next_dy <= 0
+            next_dist = math.hypot(next_dx, next_dy)
+            if crossed_target or next_dist <= 1.0:
+                path.append((float(ex), float(ey)))
+                break
 
             if int(prev_x) != int(x) or int(prev_y) != int(y):
                 path.append((x, y))

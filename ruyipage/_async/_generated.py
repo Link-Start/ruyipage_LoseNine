@@ -3,7 +3,7 @@
 # │ WARNING: 此文件由 scripts/generate_async_api.py 自动生成          │
 # │ 请勿手动编辑！修改后请重新运行生成器：                               │
 # │   python scripts/generate_async_api.py                          │
-# │ 生成时间: 2026-07-16 07:28:20                                        │
+# │ 生成时间: 2026-07-16 15:43:28                                        │
 # └──────────────────────────────────────────────────────────────────┘
 
 from .greenlet_bridge import greenlet_spawn
@@ -489,8 +489,8 @@ class AsyncFirefoxBase(AsyncFirefoxBaseMixin):
         await greenlet_spawn(self._sync.set_useragent, ua)
         return self
 
-    async def set_viewport(self, width, height, device_pixel_ratio=None):
-        await greenlet_spawn(self._sync.set_viewport, width, height, device_pixel_ratio=device_pixel_ratio)
+    async def set_viewport(self, width, height, device_pixel_ratio=None, timeout=None):
+        await greenlet_spawn(self._sync.set_viewport, width, height, device_pixel_ratio=device_pixel_ratio, timeout=timeout)
         return self
 
     async def set_window_size(self, width, height, device_pixel_ratio=None):

@@ -64,13 +64,20 @@ class WindowManager(object):
             self._owner.run_js("window.resizeTo(1280,800)")
         return self._owner
 
-    def set_size(self, width, height):
+    def _set_size_only(self, width, height):
         wid = self._get_window_id()
         if not (
             wid and self._bidi_state(wid, state="normal", width=width, height=height)
         ):
             self._owner.run_js("window.resizeTo({},{})".format(width, height))
         return self._owner
+
+    def set_size(self, width, height):
+        """Set runtime size and keep window/viewport metrics synchronized."""
+        set_window_size = getattr(self._owner, "set_window_size", None)
+        if callable(set_window_size):
+            return set_window_size(width, height)
+        return self._set_size_only(width, height)
 
     def set_position(self, x, y):
         wid = self._get_window_id()

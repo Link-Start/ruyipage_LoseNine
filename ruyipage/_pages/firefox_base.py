@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 from .._base.base import BasePage
 from .._base.driver import ContextDriver
 from .._bidi import browsing_context as bidi_context
+from .._bidi import emulation as bidi_emulation
 from .._bidi import script as bidi_script
 from .._functions.bidi_values import parse_value, make_shared_ref
 from .._functions.locator import parse_locator
@@ -5391,17 +5392,37 @@ class FirefoxBase(BasePage):
               ``page.rect.viewport_size``、``window.inner*`` 和 ``screen.*``
               一起对齐，请使用此方法。
         """
-        self.window.set_size(width, height)
+        set_size_only = getattr(self.window, "_set_size_only", None)
+        if callable(set_size_only):
+            set_size_only(width, height)
+        else:
+            self.window.set_size(width, height)
         try:
             self.emulation.set_screen_size(
                 width, height, device_pixel_ratio=device_pixel_ratio
             )
         except Exception:
             pass
-        self.set_viewport(width, height, device_pixel_ratio)
+        try:
+            self.set_viewport(width, height, device_pixel_ratio, timeout=3)
+        except BiDiError as e:
+            if str(getattr(e, "error", "")).lower() != "timeout":
+                raise
+            logger.debug("browsingContext.setViewport timeout; using JS viewport fallback")
+            try:
+                bidi_emulation.inject_viewport_settings_override(
+                    self._driver._browser_driver,
+                    self._context_id,
+                    width,
+                    height,
+                )
+            except Exception as fallback_error:
+                logger.debug("Viewport fallback injection failed: %s", fallback_error)
         return self
 
-    def set_viewport(self, width, height, device_pixel_ratio=None) -> "FirefoxBase":
+    def set_viewport(
+        self, width, height, device_pixel_ratio=None, timeout=None
+    ) -> "FirefoxBase":
         """设置当前页面视口大小。
 
         Args:
@@ -5427,6 +5448,7 @@ class FirefoxBase(BasePage):
             width=width,
             height=height,
             device_pixel_ratio=device_pixel_ratio,
+            timeout=timeout,
         )
         return self
 
