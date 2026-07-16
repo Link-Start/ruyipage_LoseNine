@@ -125,7 +125,11 @@ class FirefoxPage(FirefoxBase):
             logger.debug("Startup window normal failed: %s", e)
 
         try:
-            self.window.set_size(width, height)
+            set_size_only = getattr(self.window, "_set_size_only", None)
+            if callable(set_size_only):
+                set_size_only(width, height)
+            else:
+                self.window.set_size(width, height)
         except Exception as e:
             logger.debug("Startup window size apply failed: %s", e)
 
