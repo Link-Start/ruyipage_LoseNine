@@ -216,10 +216,17 @@ def test_get_frame_locator_maps_second_srcdoc_in_real_firefox(page):
     )
     remote_value = direct["result"]
     expected_context = remote_value["value"]["context"]
+    tree = page._driver._browser_driver.run(
+        "browsingContext.getTree",
+        {"root": page._context_id},
+    )
+    contexts = tree.get("contexts", [])
+    children = contexts[0].get("children", []) if contexts else []
 
     assert direct["type"] == "success"
     assert remote_value["type"] == "window"
     assert "handle" not in remote_value
+    assert expected_context != children[0]["context"]
 
     frame = page.get_frame("#second")
 
