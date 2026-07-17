@@ -5609,12 +5609,15 @@ class FirefoxBase(BasePage):
         匹配优先级：
             1) context_id（最精确）
             2) index
-            3) locator（按 iframe src 与 child context URL 尝试匹配）
-            4) 兜底返回第一个 child context
+            3) locator（通过 iframe contentWindow 精确获取 context）
+            4) locator 精确映射失败时，按 src 与 child context URL 匹配
+            5) locator 只有一个 child 时返回该 child
+            6) 未提供选择条件时返回第一个 child context
 
         说明：
             - BiDi 下每个 iframe 都有独立 context，可直接操作。
-            - 对 srcdoc/动态 iframe，URL 匹配可能不可用，因此保留 index 与兜底策略。
+            - contentWindow 可区分 srcdoc、同 URL 等 URL 无法消歧的 iframe。
+            - locator 对应多个 child 且无法精确匹配时返回 None，不猜测首个 child。
         """
         from .._pages.firefox_frame import FirefoxFrame
 
@@ -5640,6 +5643,28 @@ class FirefoxBase(BasePage):
             if not ele:
                 return None
 
+            direct_context_id = None
+            try:
+                direct_result = bidi_script.call_function(
+                    self._driver._browser_driver,
+                    self._context_id,
+                    "(frame) => frame.contentWindow",
+                    arguments=[ele._make_shared_ref()],
+                    result_ownership="none",
+                )
+                if direct_result.get("type") == "success":
+                    remote_value = direct_result.get("result", {})
+                    if remote_value.get("type") == "window":
+                        window_value = remote_value.get("value", {})
+                        context = window_value.get("context")
+                        if isinstance(context, str) and context:
+                            direct_context_id = context
+            except Exception:
+                direct_context_id = None
+
+            if direct_context_id:
+                return FirefoxFrame(self._browser, direct_context_id, self)
+
             # 尝试通过 URL 匹配
             ele_src = ele.attr("src") or ""
             for child in children:
@@ -5650,6 +5675,8 @@ class FirefoxBase(BasePage):
             # 如果只有一个 iframe，直接返回第一个 child
             if len(children) == 1:
                 return FirefoxFrame(self._browser, children[0]["context"], self)
+
+            return None
 
         # 返回第一个子 context
         if children:
