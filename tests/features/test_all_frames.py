@@ -197,6 +197,25 @@ def test_get_frame_locator_returns_none_when_direct_and_url_matching_fail():
     assert page.get_frame("#missing") is None
 
 
+def test_get_frame_locator_returns_none_for_ambiguous_url_matches():
+    page = make_page(
+        {
+            "contexts": [
+                {
+                    "context": "page-ctx",
+                    "children": [
+                        {"context": "frame-a", "url": "https://same.test/frame"},
+                        {"context": "frame-b", "url": "https://same.test/frame"},
+                    ],
+                }
+            ]
+        }
+    )
+    page.ele = lambda locator: FrameElement("https://same.test/frame")
+
+    assert page.get_frame("#ambiguous") is None
+
+
 @pytest.mark.browser
 def test_get_frame_locator_maps_second_srcdoc_in_real_firefox(page):
     html = """<!doctype html>
@@ -206,33 +225,60 @@ def test_get_frame_locator_maps_second_srcdoc_in_real_firefox(page):
     </body></html>"""
     page.get("data:text/html;charset=utf-8," + quote(html))
 
+    first = page.ele("#first")
     second = page.ele("#second")
-    direct = bidi_script.call_function(
+    first_direct = bidi_script.call_function(
+        page._driver._browser_driver,
+        page._context_id,
+        "(frame) => frame.contentWindow",
+        arguments=[first._make_shared_ref()],
+        result_ownership="none",
+    )
+    second_direct = bidi_script.call_function(
         page._driver._browser_driver,
         page._context_id,
         "(frame) => frame.contentWindow",
         arguments=[second._make_shared_ref()],
         result_ownership="none",
     )
-    remote_value = direct["result"]
-    expected_context = remote_value["value"]["context"]
+    first_remote = first_direct["result"]
+    second_remote = second_direct["result"]
+    first_context = first_remote["value"]["context"]
+    second_context = second_remote["value"]["context"]
     tree = page._driver._browser_driver.run(
         "browsingContext.getTree",
         {"root": page._context_id},
     )
     contexts = tree.get("contexts", [])
     children = contexts[0].get("children", []) if contexts else []
+    child_ids = {child["context"] for child in children}
 
-    assert direct["type"] == "success"
-    assert remote_value["type"] == "window"
-    assert "handle" not in remote_value
-    assert expected_context != children[0]["context"]
+    for direct, remote_value in (
+        (first_direct, first_remote),
+        (second_direct, second_remote),
+    ):
+        assert direct["type"] == "success"
+        assert remote_value["type"] == "window"
+        assert "handle" not in remote_value
+    assert first_context != second_context
+    assert {first_context, second_context}.issubset(child_ids)
 
-    frame = page.get_frame("#second")
+    first_child_context = children[0]["context"]
+    if first_context != first_child_context:
+        target_selector = "#first"
+        expected_context = first_context
+        expected_text = "A"
+    else:
+        target_selector = "#second"
+        expected_context = second_context
+        expected_text = "B"
+    assert expected_context != first_child_context
+
+    frame = page.get_frame(target_selector)
 
     assert (frame._context_id, frame.ele("#value").text) == (
         expected_context,
-        "B",
+        expected_text,
     )
 
 

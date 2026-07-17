@@ -5659,7 +5659,12 @@ class FirefoxBase(BasePage):
                         context = window_value.get("context")
                         if isinstance(context, str) and context:
                             direct_context_id = context
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    "iframe contentWindow context mapping failed: %s",
+                    e,
+                    exc_info=True,
+                )
                 direct_context_id = None
 
             if direct_context_id:
@@ -5667,10 +5672,14 @@ class FirefoxBase(BasePage):
 
             # 尝试通过 URL 匹配
             ele_src = ele.attr("src") or ""
+            matches = []
             for child in children:
                 child_url = child.get("url", "")
                 if _frame_url_matches(ele_src, child_url):
-                    return FirefoxFrame(self._browser, child["context"], self)
+                    matches.append(child)
+
+            if len(matches) == 1:
+                return FirefoxFrame(self._browser, matches[0]["context"], self)
 
             # 如果只有一个 iframe，直接返回第一个 child
             if len(children) == 1:
