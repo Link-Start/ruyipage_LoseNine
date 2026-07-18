@@ -191,15 +191,43 @@ def test_waited_human_drag_keeps_pressed_pointer_state(page, fixture_page_url):
     page.actions.move_to(points["start"]).hold().wait(0.1).human_move(
         points["end"], style="line"
     ).wait(0.1).release().perform()
-    page.wait(0.3)
+    page.wait.js_result(
+        "const state = window.__dragSlider.state(); return state.events.some((event) => event.type === 'pointerup') && state.captures.length >= 2 && state.captures[state.captures.length - 1] === 'lost' && state.left >= 250 ? state : null",
+        timeout=3,
+    )
 
     state = page.run_js("return window.__dragSlider.state()")
-    drag_moves = [
+    events = state["events"]
+    down_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["type"] == "pointerdown" and event["target"] == "knob"
+    )
+    pointer_id = events[down_index]["pointerId"]
+    up_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["type"] == "pointerup" and event["pointerId"] == pointer_id
+    )
+    pointerdown = events[down_index]
+    pointerup = events[up_index]
+    drag_events = [
         event
-        for event in state["events"]
-        if event["type"] == "pointermove" and event["buttons"] == 1
+        for event in events[down_index : up_index + 1]
+        if event["pointerId"] == pointer_id
     ]
+    drag_moves = [event for event in drag_events if event["type"] == "pointermove"]
 
+    assert pointerdown["buttons"] == 1
+    assert pointerup["buttons"] == 0
+    assert state["captures"] == ["got", "lost"]
     assert state["left"] >= 250
     assert drag_moves
+    assert drag_events[0]["type"] == "pointerdown"
+    assert drag_events[-1]["type"] == "pointerup"
+    assert all(event["buttons"] == 1 for event in drag_moves)
     assert all(event["trusted"] is True for event in drag_moves)
+    assert any(
+        event["captured"] is True and event["clientX"] > points["start"]["x"] + 22
+        for event in drag_moves
+    )

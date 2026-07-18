@@ -18,9 +18,24 @@ ctx = opts.smart_fingerprint(
 )
 
 page = FirefoxPage(opts)
-ctx.apply_emulation(page)            # 内核 + BiDi 仿真双层覆盖
+ctx.apply_emulation(page)            # 顺序必须是 ctx -> page -> ctx.apply_emulation(page)
 page.get("https://browserleaks.com/webgl")
 ```
+
+`ctx.apply_emulation(page)` 返回的结果包含 `screen`、`geolocation`、`locale`、
+`timezone`、`headers`。
+
+## 约定
+
+- `apply_smart_fingerprint()` 默认不设置外部窗口。
+- `fpfile` 不再写 `width` / `height`，避免指纹内核把屏幕尺寸拿去启动窗口。
+- `set_window_size_on_opts` 仅为兼容保留且已忽略；确需外窗尺寸时由调用方
+  在创建 `FirefoxPage` 前显式调用 `opts.set_window_size(width, height)`。
+- `ctx.apply_emulation(page)` 默认通过
+  `page.emulation.set_screen_size(hw.width, hw.height)` 只覆盖 `screen.width` /
+  `screen.height` / `screen.avail*`；`outerWidth` / `innerWidth` / viewport 继续由
+  Firefox 原生维护并随窗口变化。
+- 不做 15/92、16/93 或其他生产坐标补偿；16/93 仅用于目标指纹浏览器实机验证。
 
 ## 文件结构
 

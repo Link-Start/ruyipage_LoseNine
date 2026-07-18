@@ -11,18 +11,22 @@
 
 功能概述
 --------
-调用 opts.smart_fingerprint(...) 自动完成以下全部步骤：
+调用 opts.smart_fingerprint(...) 生成指纹和 fpfile；后续要先启动 Firefox，
+再在 `FirefoxPage(opts)` 之后调用 `ctx.apply_emulation(page)`。默认路径不设置
+外部窗口。
 
   1) 通过代理探测出口 IP → 国家 / 时区 / 经纬度（5 数据源自动回退）
   2) 可选 IPv6 探测（失败则省略，绝不伪造）
   3) 自动匹配该国的语言 / Accept-Language / 微软语音配置
   4) 随机抽取 22 套 Windows 真机硬件特征之一
   5) 拼装 Firefox 151 ±2 UA + 随机 canvas 种子
-  6) 写出 fpfile.txt（内核 key:value 格式，原子写入）
-  7) 自动配置 FirefoxOptions：proxy / user_dir / fpfile / window_size
+  6) 写出 fpfile.txt（内核 key:value 格式，原子写入，不再写 width/height）
+  7) 自动配置 FirefoxOptions：proxy / user_dir / fpfile；不会自动设置外部窗口
+     `set_window_size_on_opts` 仅为兼容保留且已忽略
 
-之后只需 FirefoxPage(opts) 启动浏览器即可；
-可选再调用 ctx.apply_emulation(page) 叠加 BiDi 仿真覆盖。
+标准顺序是：`ctx = opts.smart_fingerprint(...)` →
+`page = FirefoxPage(opts)` → `ctx.apply_emulation(page)`。
+`ctx.apply_emulation(page)` 的返回结果包含 `screen`。
 
 常见用法
 --------
@@ -84,7 +88,7 @@ def main():
     opts.set_browser_path(BROWSER_PATH)
     opts.set_port(9222)
 
-    # ---- 一行搞定所有指纹配置 ----
+    # ---- 一行搞定指纹配置；默认不设置外部窗口 ----
     try:
         ctx = opts.smart_fingerprint(
             proxy_host=PROXY_HOST,
@@ -109,7 +113,7 @@ def main():
     # ---- 启动浏览器 ----
     page = FirefoxPage(opts)
     try:
-        # 可选：叠加 BiDi 仿真覆盖（geolocation/locale/timezone/headers）
+        # 在 Firefox 创建后再叠加 screen / geolocation / locale / timezone / headers
         ctx.apply_emulation(page, logger=print)
 
         # ---- 你的业务逻辑写在这里 ----

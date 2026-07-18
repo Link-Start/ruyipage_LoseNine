@@ -734,7 +734,9 @@ class FirefoxOptions(object):
         2. 国家校验（``require_country`` 不匹配直接抛 ``CountryMismatchError``）；
         3. 随机抽取硬件指纹 + 拼装 Firefox 151 ±2 UA + 随机 canvas 种子；
         4. 写入符合内核 ``key:value`` 字段顺序的 ``fpfile.txt``；
-        5. 自动配置当前 ``FirefoxOptions``：proxy / userdir / fpfile / 窗口大小。
+        5. 只配置当前 ``FirefoxOptions`` 的 proxy / userdir / fpfile；
+           ``set_window_size_on_opts`` 仅为兼容保留且已忽略。
+           If an outer window is required, call ``opts.set_window_size()`` explicitly before creating the page.
 
         所有关键字参数透传到 :func:`ruyipage.apply_smart_fingerprint`，常用
         参数包括 ``proxy_host`` / ``proxy_port`` / ``proxy_user`` / ``proxy_pwd``

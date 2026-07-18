@@ -33,6 +33,7 @@ BROWSER_TEST_FILES = {
     "tests/features/test_cookies.py",
     "tests/features/test_data_collector.py",
     "tests/features/test_human_move_bounds.py",
+    "tests/features/test_fingerprint_window_geometry.py",
     "tests/features/test_intercept_mock_fail.py",
     "tests/features/test_interceptor_requests.py",
     "tests/features/test_interceptor_responses.py",

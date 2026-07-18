@@ -17,9 +17,10 @@ Provide a single one-stop API ``apply_smart_fingerprint(opts, ...)`` that:
    composes a Firefox 151 ±2 user-agent and a per-session canvas seed.
 4. Maps the country code to language / Accept-Language / speech voices.
 5. Writes a ``fpfile.txt`` that strictly follows the firefox-fingerprintBrowser
-   field schema (``key:value``) to the chosen userdir.
+   field schema (``key:value``) to the chosen userdir, without ``width`` / ``height`` entries.
 6. Configures the supplied ``FirefoxOptions`` instance (proxy / userdir /
-   fpfile / window size) so the caller only needs ``FirefoxPage(opts)``.
+   fpfile). ``set_window_size_on_opts`` is retained as a deprecated no-op;
+   fingerprint screen dimensions are never mapped to the outer window.
 
 Public API
 ----------
@@ -93,7 +94,7 @@ Typical usage
         raise
 
     page = FirefoxPage(opts)
-    ctx.apply_emulation(page)        # one-line BiDi emulation overlay
+    ctx.apply_emulation(page)        # returns a map containing ``screen``
     page.get("https://browserleaks.com/webgl")
 """
 
@@ -1236,8 +1237,6 @@ def write_fpfile(
     a("webgl.aliased_point_size_max:" + str(w.aliased_point_size_max))
     a("webgl.max_viewport_dim:" + str(w.max_viewport_dim))
 
-    a("width:" + str(hw.width))
-    a("height:" + str(hw.height))
     a("canvas:" + str(fp.canvas_seed))
 
     proxy_scheme = (proxy_scheme or "http").strip().lower()
@@ -1349,6 +1348,7 @@ class FingerprintContext:
         self,
         page: Any,
         *,
+        set_screen_size: bool = True,
         set_geolocation: bool = True,
         set_locale: bool = True,
         set_timezone: bool = True,
@@ -1366,7 +1366,8 @@ class FingerprintContext:
         ----------
         page : FirefoxPage
             The live page returned by ``FirefoxPage(opts)``.
-        set_geolocation / set_locale / set_timezone / set_extra_headers
+        set_screen_size / set_geolocation / set_locale / set_timezone /
+        set_extra_headers
             Toggle individual overlays.
         logger : callable, optional
             Receives ``[emu] ...`` status messages.
@@ -1374,12 +1375,27 @@ class FingerprintContext:
         Returns
         -------
         dict[str, bool]
-            ``{"geolocation": bool, "locale": bool, "timezone": bool,
-            "headers": bool}`` - whether each overlay was applied.
+            ``{"screen": bool, "geolocation": bool, "locale": bool,
+            "timezone": bool, "headers": bool}`` - whether each overlay
+            was applied.
         """
         log = logger or (lambda _msg: None)
-        result = {"geolocation": False, "locale": False,
+        result = {"screen": False, "geolocation": False, "locale": False,
                   "timezone": False, "headers": False}
+
+        if set_screen_size:
+            try:
+                page.emulation.set_screen_size(
+                    self.fingerprint.hardware.width,
+                    self.fingerprint.hardware.height,
+                )
+                result["screen"] = True
+                log("[emu] screen {}x{}".format(
+                    self.fingerprint.hardware.width,
+                    self.fingerprint.hardware.height,
+                ))
+            except Exception as e:  # noqa: BLE001
+                log("[emu] screen skipped: {}".format(e))
 
         if set_geolocation:
             try:
@@ -1455,19 +1471,6 @@ def _generate_userdir(base_dir: Optional[str]) -> str:
     return path
 
 
-def _safe_startup_window_size(width: int, height: int) -> Tuple[int, int]:
-    """Return a non-maximized startup window for a fingerprint screen size."""
-    w = int(width)
-    h = int(height)
-
-    # fpfile width/height describe the spoofed screen. Passing the same values
-    # as Firefox's outer window size can make Windows start/restore maximized,
-    # especially for 1366x768 profiles, which breaks coordinate mapping.
-    safe_w = min(w - 80, 1600)
-    safe_h = min(h - 80, 900)
-    return max(800, safe_w), max(600, safe_h)
-
-
 # ---------------------------------------------------------------------------
 # One-stop API
 # ---------------------------------------------------------------------------
@@ -1494,7 +1497,7 @@ def apply_smart_fingerprint(
     set_proxy_on_opts: bool = True,
     set_userdir_on_opts: bool = True,
     set_fpfile_on_opts: bool = True,
-    set_window_size_on_opts: bool = True,
+    set_window_size_on_opts: bool = False,
     logger: Optional[Callable[[str], None]] = None,
 ) -> FingerprintContext:
     """One-stop smart fingerprint configuration.
@@ -1510,7 +1513,7 @@ def apply_smart_fingerprint(
     5. ``pick_fingerprint()``    - sample one of the 22 hardware profiles.
     6. ``write_fpfile()``        - serialize to ``fpfile.txt``.
     7. Configure the supplied ``FirefoxOptions``: proxy / userdir /
-       fpfile / window size (toggleable individually).
+       fpfile (toggleable individually).
 
     Parameters
     ----------
@@ -1543,10 +1546,14 @@ def apply_smart_fingerprint(
         Override the bundled JSON files.
     rng : random.Random, optional
         Inject deterministic randomness for tests.
-    set_proxy_on_opts / set_userdir_on_opts / set_fpfile_on_opts /
+    set_proxy_on_opts / set_userdir_on_opts / set_fpfile_on_opts : bool
+        Individually enable or disable each opts mutation if you want
+        to drive them yourself.
     set_window_size_on_opts : bool
-        Individually disable each opts mutation if you want to drive
-        them yourself.
+        Deprecated compatibility parameter. Fingerprint screen dimensions
+        are never mapped to the Firefox outer window. Call
+        ``opts.set_window_size()`` yourself when an explicit outer window is
+        required.
     logger : callable, optional
         Receives ``[fp] ...`` status messages.
 
@@ -1654,14 +1661,10 @@ def apply_smart_fingerprint(
             log("[fp] set_fpfile failed: " + str(e))
 
     if set_window_size_on_opts:
-        try:
-            window_width, window_height = _safe_startup_window_size(
-                fp.hardware.width,
-                fp.hardware.height,
-            )
-            opts.set_window_size(window_width, window_height)
-        except Exception as e:  # noqa: BLE001
-            log("[fp] set_window_size failed: " + str(e))
+        log(
+            "[fp] set_window_size_on_opts is deprecated and ignored; "
+            "call opts.set_window_size() explicitly for an outer window"
+        )
 
     return FingerprintContext(
         geo=geo,

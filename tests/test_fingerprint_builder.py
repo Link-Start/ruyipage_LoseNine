@@ -456,8 +456,6 @@ def test_write_fpfile_schema(tmp_path):
         "webgl.max_vertex_attribs",
         "webgl.aliased_point_size_max",
         "webgl.max_viewport_dim",
-        "width",
-        "height",
         "canvas",
         "httpauth.username",
         "httpauth.password",
@@ -479,6 +477,8 @@ def test_write_fpfile_schema(tmp_path):
     assert any(line.startswith("canvas:") for line in lines)
     assert any(line == "httpauth.username:u" for line in lines)
     assert any(line == "httpauth.password:p" for line in lines)
+    assert not any(line.startswith("width:") for line in lines)
+    assert not any(line.startswith("height:") for line in lines)
 
 
 def test_write_fpfile_no_ipv6_no_auth(tmp_path):
@@ -528,11 +528,10 @@ def test_write_fpfile_no_ipv6_no_auth(tmp_path):
         "webgl.max_vertex_attribs",
         "webgl.aliased_point_size_max",
         "webgl.max_viewport_dim",
-        "width",
-        "height",
         "canvas",
     ]
     assert actual_keys == expected_core_keys
+    assert not any(key in ("width", "height") for key in actual_keys)
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +577,8 @@ def test_fingerprint_context_helpers():
             self.calls.append(("loc", tuple(langs)))
         def set_timezone(self, tz):
             self.calls.append(("tz", tz))
+        def set_screen_size(self, width, height):
+            self.calls.append(("screen", width, height))
 
     class _Net:
         def __init__(self):
@@ -593,15 +594,40 @@ def test_fingerprint_context_helpers():
     page = _Page()
     result = ctx.apply_emulation(page)
     assert result == {"geolocation": True, "locale": True,
-                      "timezone": True, "headers": True}
+                      "timezone": True, "headers": True, "screen": True}
     assert page.network.headers["Accept-Language"] == fp.accept_language
+    assert page.emulation.calls[0] == ("screen", fp.hardware.width, fp.hardware.height)
 
     # missing hooks degrade gracefully (e.g. older ruyipage builds)
     class _BarePage:
         pass
     result2 = ctx.apply_emulation(_BarePage())
     assert result2 == {"geolocation": False, "locale": False,
-                       "timezone": False, "headers": False}
+                       "timezone": False, "headers": False, "screen": False}
+
+    # opt-out skips screen overlay
+    page2 = _Page()
+    result3 = ctx.apply_emulation(page2, set_screen_size=False)
+    assert result3 == {"geolocation": True, "locale": True,
+                       "timezone": True, "headers": True, "screen": False}
+    assert all(call[0] != "screen" for call in page2.emulation.calls)
+
+    class _FlakyEmu(_Emu):
+        def set_screen_size(self, width, height):
+            raise RuntimeError("screen unavailable")
+
+    class _FlakyPage:
+        def __init__(self):
+            self.emulation = _FlakyEmu()
+            self.network = _Net()
+
+    logs: List[str] = []
+    flaky_page = _FlakyPage()
+    result4 = ctx.apply_emulation(flaky_page, logger=logs.append)
+    assert result4 == {"geolocation": True, "locale": True,
+                       "timezone": True, "headers": True, "screen": False}
+    assert any("screen skipped" in line for line in logs)
+    assert flaky_page.emulation.calls[0][0] == "geo"
 
 
 # ---------------------------------------------------------------------------
@@ -630,9 +656,9 @@ def test_apply_smart_fingerprint_full_pipeline(tmp_path):
     # Geo got enriched with ipv6
     assert ctx.geo.ipv6 == "2001:db8::abcd"
 
-    # All four opts mutations recorded in order
+    # Default window-size mutation is now disabled
     names = [c[0] for c in opts.calls]
-    assert names == ["set_proxy", "set_user_dir", "set_fpfile", "set_window_size"]
+    assert names == ["set_proxy", "set_user_dir", "set_fpfile"]
     assert opts.calls[0][1] == ("http://proxy.example.com:8080",)
 
     # fpfile actually written and contains httpauth
@@ -644,12 +670,14 @@ def test_apply_smart_fingerprint_full_pipeline(tmp_path):
     assert "httpauth.username:u" in text
     assert "httpauth.password:p" in text
     assert "local_webrtc_ipv6:2001:db8::abcd" in text
+    assert "width:" not in text
+    assert "height:" not in text
 
     # userdir under provided base_dir
     assert os.path.commonpath([ctx.userdir, str(tmp_path)]) == str(tmp_path)
 
 
-def test_apply_smart_fingerprint_uses_safe_startup_window_for_small_screen(tmp_path):
+def test_apply_smart_fingerprint_default_keeps_fpfile_size_without_window_mutation(tmp_path):
     geo = _make_geo()
     hw = next(p for p in list_hardware_profiles() if p.id == "win-hd4600")
     country = get_country_profile("US")
@@ -676,18 +704,52 @@ def test_apply_smart_fingerprint_uses_safe_startup_window_for_small_screen(tmp_p
             base_dir=str(tmp_path),
             require_country="US",
             fetch_ipv6=False,
+    )
+
+    text = open(ctx.fpfile_path, encoding="utf-8").read()
+    assert "width:" not in text
+    assert "height:" not in text
+    assert all(c[0] != "set_window_size" for c in opts.calls)
+
+
+def test_apply_smart_fingerprint_never_maps_screen_size_to_outer_window(tmp_path):
+    geo = _make_geo()
+    hw = next(p for p in list_hardware_profiles() if p.id == "win-hd4600")
+    country = get_country_profile("US")
+    fp = FingerprintProfile(
+        profile_id=hw.id,
+        firefox_version=152,
+        useragent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) "
+            "Gecko/20100101 Firefox/152.0"
+        ),
+        hardware=hw,
+        country=country,
+        canvas_seed=175,
+        language_primary=country.language_primary,
+        accept_language=country.accept_language,
+    )
+
+    with mock.patch.object(builder, "fetch_geo_info", return_value=geo), \
+            mock.patch.object(builder, "fetch_public_ipv6", return_value=None), \
+            mock.patch.object(builder, "pick_fingerprint", return_value=fp):
+        opts = _StubOptions()
+        logs: List[str] = []
+        ctx = apply_smart_fingerprint(
+            opts,
+            base_dir=str(tmp_path),
+            require_country="US",
+            fetch_ipv6=False,
+            set_window_size_on_opts=True,
+            logger=logs.append,
         )
 
     text = open(ctx.fpfile_path, encoding="utf-8").read()
-    assert "width:1366\n" in text
-    assert "height:768\n" in text
+    assert "width:" not in text
+    assert "height:" not in text
 
-    window_call = next(c for c in opts.calls if c[0] == "set_window_size")
-    width, height = window_call[1]
-    assert width < 1366
-    assert height < 768
-    assert width >= 800
-    assert height >= 600
+    assert all(c[0] != "set_window_size" for c in opts.calls)
+    assert any("set_window_size_on_opts is deprecated" in line for line in logs)
 
 
 def test_apply_smart_fingerprint_supports_socks5_auth_proxy(tmp_path):
@@ -816,3 +878,28 @@ def test_apply_smart_fingerprint_toggles_and_tolerates_opts_errors(tmp_path):
 
     assert ctx.geo.ipv6 is None
     assert isinstance(ctx.fingerprint, FingerprintProfile)
+
+
+def test_apply_smart_fingerprint_deprecated_window_flag_does_not_call_opts(tmp_path):
+    geo = _make_geo()
+    logs: List[str] = []
+
+    with mock.patch.object(builder, "fetch_geo_info", return_value=geo), \
+            mock.patch.object(builder, "fetch_public_ipv6", return_value=None):
+        opts = _StubOptions(fail_on=["set_window_size"])
+        ctx = apply_smart_fingerprint(
+            opts,
+            proxy_host="proxy.example.com", proxy_port=8080,
+            base_dir=str(tmp_path),
+            require_country=None,
+            fetch_ipv6=False,
+            set_window_size_on_opts=True,
+            rng=random.Random(7),
+            logger=logs.append,
+        )
+
+    assert isinstance(ctx, FingerprintContext)
+    assert ctx.userdir
+    assert ctx.fpfile_path
+    assert all(c[0] != "set_window_size" for c in opts.calls)
+    assert any("set_window_size_on_opts is deprecated" in line for line in logs)

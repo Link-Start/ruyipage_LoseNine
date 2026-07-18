@@ -173,7 +173,12 @@ def set_screen_orientation_override(driver, orientation_type, angle=0, contexts=
 
 
 def set_screen_settings_override(
-    driver, width=None, height=None, device_pixel_ratio=None, contexts=None
+    driver,
+    width=None,
+    height=None,
+    device_pixel_ratio=None,
+    contexts=None,
+    user_contexts=None,
 ):
     """覆盖屏幕设置 (FF147+ stable)
 
@@ -183,6 +188,8 @@ def set_screen_settings_override(
         device_pixel_ratio: 设备像素比
         contexts: 限定 context 列表
     """
+    if contexts and user_contexts:
+        raise ValueError("contexts and user_contexts cannot both be provided")
     params = {}
 
     # 构建screenArea对象
@@ -198,6 +205,10 @@ def set_screen_settings_override(
         params["devicePixelRatio"] = device_pixel_ratio
     if contexts:
         params["contexts"] = contexts if isinstance(contexts, list) else [contexts]
+    if user_contexts:
+        params["userContexts"] = (
+            user_contexts if isinstance(user_contexts, list) else [user_contexts]
+        )
     return _safe_run(
         driver,
         "emulation.setScreenSettingsOverride",

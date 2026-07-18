@@ -1674,6 +1674,35 @@ Suggested order:
 
 ---
 
+## Smart Fingerprint API
+
+`ruyiPage` provides an out-of-box smart fingerprint flow on top of `firefox-fingerprintBrowser`: probe egress IP → match locale/timezone/voices → pick one of 22 hardware profiles → write `fpfile.txt`. By default it does not set an external window; call `ctx.apply_emulation(page)` only after `page = FirefoxPage(opts)`.
+
+### Recommended order
+
+```python
+from ruyipage import FirefoxOptions, FirefoxPage, CountryMismatchError
+
+opts = FirefoxOptions()
+opts.set_browser_path(r"C:/Program Files/Mozilla Firefox/firefox.exe")
+
+ctx = opts.smart_fingerprint(...)
+
+page = FirefoxPage(opts)
+ctx.apply_emulation(page)  # ctx -> page -> ctx.apply_emulation(page)
+```
+
+`set_window_size_on_opts` is retained as a deprecated no-op. Smart fingerprinting never maps `screen.width` / `screen.height` to the Firefox outer window. If an explicit outer window is required, call `opts.set_window_size(width, height)` yourself before creating `FirefoxPage`. `fpfile.txt` no longer stores `width` / `height`.
+
+### Pipeline notes
+
+- After Firefox starts, `ctx.apply_emulation(page)` sets `screen.width` / `screen.height` / `screen.avail*` through `page.emulation.set_screen_size(hw.width, hw.height)`.
+- Firefox keeps `outerWidth` / `innerWidth` / viewport geometry natively, and they change with the real window.
+- We do not add production coordinate compensation such as 15/92 or 16/93; 16/93 is only for real-machine verification of the target fingerprint browser.
+- The `apply_emulation()` result includes `screen`, `geolocation`, `locale`, `timezone`, and `headers`.
+
+---
+
 ## Protocol Source
 
 The core capabilities of `ruyiPage` are aligned with and based on:

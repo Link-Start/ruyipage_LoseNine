@@ -25,6 +25,20 @@ class EmulationManager(object):
     def _ctx(self):
         return [self._owner._context_id]
 
+    def _user_context(self):
+        try:
+            result = bidi_context.get_tree(
+                self._owner._driver._browser_driver,
+                max_depth=0,
+                root=self._owner._context_id,
+            )
+            contexts = result.get("contexts", [])
+            if contexts:
+                return contexts[0].get("userContext")
+        except Exception as e:
+            logger.debug("get current user context failed: %s", e)
+        return None
+
     def _supported(self, result):
         """判断底层命令是否被当前浏览器实现支持。
 
@@ -115,12 +129,18 @@ class EmulationManager(object):
             height: 屏幕高度（CSS 像素）
             device_pixel_ratio: 设备像素比，例如 2.0 / 3.0
         """
+        user_context = self._user_context()
+        scope = (
+            {"user_contexts": [user_context]}
+            if user_context
+            else {"contexts": self._ctx()}
+        )
         result = bidi_emulation.set_screen_settings_override(
             self._owner._driver._browser_driver,
             width=width,
             height=height,
             device_pixel_ratio=device_pixel_ratio,
-            contexts=self._ctx(),
+            **scope,
         )
         if result is None:
             bidi_emulation.inject_screen_settings_override(

@@ -45,18 +45,23 @@
     const track = document.getElementById('track');
     const knob = document.getElementById('knob');
     const events = [];
+    const captures = [];
     let dragging = false;
     let grabOffset = 0;
 
     function record(event) {
-      events.push({
+      const entry = {
         type: event.type,
-        x: Math.round(event.clientX),
-        y: Math.round(event.clientY),
         buttons: event.buttons,
-        button: event.button,
+        clientX: Math.round(event.clientX),
+        target: event.target.id || event.target.tagName.toLowerCase(),
+        pointerId: event.pointerId,
         trusted: event.isTrusted
-      });
+      };
+      if (event.type === 'pointermove') {
+        entry.captured = knob.hasPointerCapture(event.pointerId);
+      }
+      events.push(entry);
     }
 
     function setLeft(value) {
@@ -71,6 +76,10 @@
       knob.classList.add('dragging');
       grabOffset = event.clientX - knob.getBoundingClientRect().left;
       knob.setPointerCapture(event.pointerId);
+    });
+
+    knob.addEventListener('gotpointercapture', () => {
+      captures.push('got');
     });
 
     knob.addEventListener('pointermove', (event) => {
@@ -89,6 +98,10 @@
         knob.releasePointerCapture(event.pointerId);
       } catch (e) {
       }
+    });
+
+    knob.addEventListener('lostpointercapture', () => {
+      captures.push('lost');
     });
 
     window.__dragSlider = {
@@ -110,7 +123,8 @@
       state() {
         return {
           left: Math.round(knob.getBoundingClientRect().left - track.getBoundingClientRect().left),
-          events
+          events: events.map((event) => ({...event})),
+          captures: captures.slice()
         };
       }
     };

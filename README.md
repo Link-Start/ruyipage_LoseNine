@@ -1716,10 +1716,11 @@ page.extensions.uninstall(ext_id)
 
 `ruyiPage` 在 [`firefox-fingerprintBrowser`](https://github.com/LoseNine/firefox-fingerprintBrowser)
 内核之上提供了开箱即用的 **智能指纹** 能力：一行代码完成「探测出口 IP →
-匹配语言/时区/语音 → 抽取 22 套真机硬件特征 → 写出 `fpfile.txt` → 配置
-`FirefoxOptions`」全流程。
+匹配语言/时区/语音 → 抽取 22 套真机硬件特征 → 写出 `fpfile.txt`」全流程。
+`apply_smart_fingerprint()` 默认不设置外部窗口；推荐顺序是先取得 `ctx`，再创建
+`FirefoxPage(opts)`，最后调用 `ctx.apply_emulation(page)`。
 
-### 一行链式调用
+### 推荐顺序
 
 ```python
 from ruyipage import FirefoxOptions, FirefoxPage, CountryMismatchError
@@ -1735,11 +1736,9 @@ ctx = opts.smart_fingerprint(
 )
 
 page = FirefoxPage(opts)
-ctx.apply_emulation(page)       # 内核 fpfile 之上再叠加 BiDi 仿真
+ctx.apply_emulation(page)       # 顺序必须是 ctx -> page -> ctx.apply_emulation(page)
 page.get("https://browserleaks.com/webgl")
 ```
-
-或者直接调用顶层函数 `apply_smart_fingerprint(opts, ...)`，效果一致。
 
 ### 流水线说明
 
@@ -1747,14 +1746,18 @@ page.get("https://browserleaks.com/webgl")
 2. `fetch_geo_info(...)` — 5 数据源回退（geojs / ipapi / ipwho / ip-api /
    ipinfo）；`require_country` 不匹配立即抛 `CountryMismatchError`。
 3. `fetch_public_ipv6(...)` — best-effort，失败则 `*_webrtc_ipv6` 整行省略。
-4. 自动生成 / 复用 `userdir`，写入符合内核字段顺序的 `fpfile.txt`。
-5. 在 `FirefoxOptions` 上自动 `set_proxy / set_user_dir / set_fpfile /
-   set_window_size`，每一步都可单独关闭。
+4. 自动生成 / 复用 `userdir`，写入符合内核字段顺序的 `fpfile.txt`；不再写入
+   `width` / `height`。
+5. `set_window_size_on_opts` 仅为兼容保留且已忽略；智能指纹不会把
+   `screen.width/height` 映射为 Firefox 外窗尺寸。确需设置外窗时，请在创建
+   `FirefoxPage` 前由调用方显式调用 `opts.set_window_size(width, height)`。
 6. 返回 `FingerprintContext`：
    - `ctx.summary()` — 单行日志；
-   - `ctx.apply_emulation(page)` — geolocation / locale / timezone /
-     Accept-Language 四重 BiDi 仿真覆盖（每一步独立 `try/except`，
-     旧版 ruyipage 优雅降级）；
+   - `ctx.apply_emulation(page)` — 默认通过
+     `page.emulation.set_screen_size(hw.width, hw.height)` 设置
+     `screen.width` / `screen.height` / `screen.avail*`；`outerWidth` /
+     `innerWidth` / viewport 继续由 Firefox 原生维护并随窗口变化。返回结果包含
+     `screen`、`geolocation`、`locale`、`timezone`、`headers`；
    - `ctx.to_dict()` — 持久化指纹身份（账号库等）。
 
 ### 内置数据资产

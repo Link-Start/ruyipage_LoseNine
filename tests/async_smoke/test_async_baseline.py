@@ -5,6 +5,7 @@
 """
 
 import inspect
+from pathlib import Path
 import pytest
 
 
@@ -584,3 +585,55 @@ class TestPytestMarkerBuckets:
         for rel_path in conftest.BROWSER_TEST_FILES:
             path = conftest.PROJECT_ROOT / rel_path
             assert path.is_file(), rel_path
+
+
+class TestSmartFingerprintDocs:
+    """Verify the smart-fingerprint docs stay aligned with the contract."""
+
+    def _read(self, relative_path: str) -> str:
+        root = Path(__file__).resolve().parents[2]
+        return (root / relative_path).read_text(encoding="utf-8")
+
+    def test_smart_fingerprint_docs_describe_native_window_contract(self):
+        readme = self._read("README.md")
+        readme_en = self._read("README_EN.md")
+        fingerprint_readme = self._read("ruyipage/_fingerprint/README.md")
+        example = self._read("examples/48_smart_fingerprint.py")
+        builder_doc = self._read("ruyipage/_fingerprint/builder.py")
+        firefox_options_doc = self._read("ruyipage/_configs/firefox_options.py")
+        assert "`apply_smart_fingerprint()` 默认不设置外部窗口" in readme
+        assert "ctx = opts.smart_fingerprint(" in readme
+        assert "page = FirefoxPage(opts)" in readme
+        assert "ctx.apply_emulation(page)" in readme
+        assert "set_window_size_on_opts" in readme
+        assert "仅为兼容保留且已忽略" in readme
+        assert "返回结果包含" in readme
+        assert "`screen`" in readme
+        assert "By default it does not set an external window" in readme_en
+        assert "no longer stores `width` / `height`" in readme_en
+        assert "After Firefox starts, `ctx.apply_emulation(page)`" in readme_en
+        assert "set_screen_size(hw.width, hw.height)" in readme_en
+        assert "`apply_smart_fingerprint()` 默认不设置外部窗口" in fingerprint_readme
+        assert "`fpfile` 不再写 `width` / `height`" in fingerprint_readme
+        assert "ctx = opts.smart_fingerprint(...)" in example
+        assert "page = FirefoxPage(opts)" in example
+        assert "ctx.apply_emulation(page)" in example
+        assert "without ``width`` / ``height`` entries." in builder_doc
+        assert "returns a map containing ``screen``" in builder_doc
+        assert "If an outer window is required, call ``opts.set_window_size()`` explicitly" in firefox_options_doc
+
+        forbidden_readme_en = [
+            "automatically sets the window size",
+            "fpfile keeps width and height",
+        ]
+        for fragment in forbidden_readme_en:
+            assert fragment not in readme_en, fragment
+
+        forbidden_readme = [
+            "自动配置 FirefoxOptions：proxy / user_dir / fpfile / window_size",
+            "自动设置窗口大小",
+            "fpfile 保留原始屏幕尺寸",
+            "fpfile 保留 width/height",
+        ]
+        for fragment in forbidden_readme:
+            assert fragment not in readme, fragment

@@ -54,14 +54,19 @@ python -m pytest -m fast -q
 
 默认情况下，测试会直接使用系统默认路径下的 Firefox。
 
-如果你希望显式指定浏览器路径，可以设置环境变量：
+如果你希望显式指定浏览器路径，Windows 下请使用 PowerShell：
 
-```bash
-set RUYIPAGE_TEST_FIREFOX_PATH=C:\Program Files\Mozilla Firefox\firefox.exe
+```powershell
+$env:RUYIPAGE_TEST_FIREFOX_PATH="C:\Program Files\Mozilla Firefox\firefox.exe"
+$env:RUYIPAGE_VERIFY_NATIVE_GEOMETRY="1"
+python -m pytest tests/features/test_fingerprint_window_geometry.py -q
 ```
 
 如果你本地使用的是配套的 `firefox-fingerprintBrowser` 151 版本 release，也可以把
 这个环境变量指向它的 `firefox.exe`，这样整套 `tests/` 会直接跑在指纹浏览器上。
+
+`RUYIPAGE_VERIFY_NATIVE_GEOMETRY=1` 只用于目标指纹 Firefox 的实机验证；如果你的
+机器 DPI、缩放、主题或浏览器构建不同，16/93 的外窗/内窗差值可能会变化。
 
 ### 4. 运行全部基线
 

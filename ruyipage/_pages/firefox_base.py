@@ -430,6 +430,14 @@ class FirefoxBase(BasePage):
 
     // === API: 渲染鼠标移动轨迹 ===
     // points: [[x,y], [x,y], ...]
+    function appendTrailPoint(pt) {
+        trail.push(pt);
+        if (trail.length > MAX_TRAIL) {
+            trail.shift();
+        }
+        moveDot(pt[0], pt[1]);
+    }
+
     function pumpMoves() {
         moveRaf = 0;
         if (clearMotionStateIfResized()) {
@@ -444,12 +452,7 @@ class FirefoxBase(BasePage):
 
         var batch = Math.min(moveQueue.length, 3);
         for (var i = 0; i < batch; i++) {
-            var pt = moveQueue.shift();
-            trail.push(pt);
-            if (trail.length > MAX_TRAIL) {
-                trail.shift();
-            }
-            moveDot(pt[0], pt[1]);
+            appendTrailPoint(moveQueue.shift());
         }
         drawTrail();
         moveRaf = window.requestAnimationFrame(pumpMoves);
@@ -469,6 +472,15 @@ class FirefoxBase(BasePage):
     // === API: 渲染点击动画 ===
     function renderClick(x, y, button) {
         clearMotionStateIfResized();
+        if (moveRaf) {
+            window.cancelAnimationFrame(moveRaf);
+            moveRaf = 0;
+        }
+        while (moveQueue.length) {
+            appendTrailPoint(moveQueue.shift());
+        }
+        drawTrail();
+        startFadeOut();
         var color = button === 2 ? '255,60,60' : button === 1 ? '60,60,255' : '60,200,60';
         moveDot(x, y);
 
